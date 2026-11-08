@@ -2,7 +2,7 @@ name: Build APK
 
 # Every push to main builds the app and puts the APK on the "latest" release,
 # so you can grab it straight from your phone:
-# https://github.com/OctoPas647/burstblastcrazyness/releases/latest
+# https://github.com/OctoPas647/BurstBlastCrazyness/releases/latest
 on:
   push:
     branches: [main]
@@ -19,9 +19,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -37,7 +37,7 @@ jobs:
       - name: Name the APK
         run: cp android/app/build/outputs/apk/release/app-release.apk BurstBlastCrazyness.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BurstBlastCrazyness-apk
           path: BurstBlastCrazyness.apk

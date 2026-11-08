@@ -11,7 +11,7 @@ An 8×8 block puzzle that deals you **truly random pieces**. No ads, no revives 
 
 | Where | How |
 | --- | --- |
-| Android | Download `BurstBlastCrazyness.apk` from [Releases → latest](https://github.com/OctoPas647/burstblastcrazyness/releases/latest). Every new build installs over the last one and keeps your scores. |
+| Android | Download `BurstBlastCrazyness.apk` from [Releases → latest](https://github.com/OctoPas647/BurstBlastCrazyness/releases/latest). Every new build installs over the last one and keeps your scores. |
 | Browser | https://octopas647.github.io/burstblastcrazyness/ (after Pages is switched on, see below) |
 | Locally | `cd web && python3 -m http.server` then open http://localhost:8000 |
 
