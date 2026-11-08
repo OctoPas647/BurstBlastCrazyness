@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Version comes from CI (run number) so every pushed build can update the last one.
+def ciBuild = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
+android {
+    namespace 'com.octopas647.burstblast'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.octopas647.burstblast'
+        minSdk 26
+        targetSdk 35
+        versionCode ciBuild
+        versionName "1.0." + ciBuild
+    }
+
+    // A fixed key that lives in the repo, so a new APK installs over the old one
+    // without uninstalling (no lost scores). Fine for sideloading; for the Play
+    // Store you'd use a private key stored in GitHub Secrets instead.
+    signingConfigs {
+        shared {
+            storeFile file('bbc-debug.keystore')
+            storePassword 'android'
+            keyAlias 'bbc'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    // The game itself lives in /web at the repo root and is packed into the APK as-is.
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets', '../../web']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Keeps all Kotlin stdlib pieces on one version (androidx pulls in mixed ones).
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.activity:activity:1.9.3'
+}
