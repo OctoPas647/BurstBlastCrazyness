@@ -40,6 +40,9 @@
     pick: function () { tone(520, 0, 0.05, 'sine', 0.08); },
     place: function () { tone(180, 0, 0.09, 'triangle', 0.2); },
     drop: function () { tone(140, 0, 0.12, 'sine', 0.12); },
+    deal: function () {
+      [0, 4, 7].forEach(function (st, i) { tone(note(st + 12), i * 0.05, 0.08, 'sine', 0.06); });
+    },
     clear: function (lines, combo) {
       var base = Math.min(combo, SCALE.length - 4);
       var n = Math.min(lines + 1, 4);

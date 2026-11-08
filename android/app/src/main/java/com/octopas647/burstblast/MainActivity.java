@@ -10,9 +10,15 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.webkit.WebViewAssetLoader;
 
 /**
@@ -33,6 +39,9 @@ public class MainActivity extends ComponentActivity {
         Window w = getWindow();
         w.setStatusBarColor(Color.parseColor("#1a0f3d"));
         w.setNavigationBarColor(Color.parseColor("#1a0f3d"));
+        // Full screen: draw behind the bars, then hide them.
+        WindowCompat.setDecorFitsSystemWindows(w, false);
+        hideSystemBars();
 
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -57,7 +66,17 @@ public class MainActivity extends ComponentActivity {
             }
         });
 
-        setContentView(web);
+        // Keep the game clear of the camera cutout; the gap shows the game's background color.
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.parseColor("#1a0f3d"));
+        root.addView(web, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(cut.left, cut.top, cut.right, cut.bottom);
+            return WindowInsetsCompat.CONSUMED;
+        });
+        setContentView(root);
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
 
@@ -74,6 +93,20 @@ public class MainActivity extends ComponentActivity {
                 });
             }
         });
+    }
+
+    private void hideSystemBars() {
+        Window w = getWindow();
+        WindowInsetsControllerCompat c = WindowCompat.getInsetsController(w, w.getDecorView());
+        c.hide(WindowInsetsCompat.Type.systemBars());
+        // Swipe from the edge shows the bars for a moment, then they hide again.
+        c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemBars();
     }
 
     @Override

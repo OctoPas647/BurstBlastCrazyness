@@ -200,12 +200,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .slot .tray-piece { transition: transform .08s, opacity .08s; }
 .slot.dragging .tray-piece { opacity: 0; transform: scale(.6); }
 .slot.nofit .tray-piece { opacity: .35; filter: grayscale(.7); }
-.tray.deal .tray-piece { animation: deal .16s cubic-bezier(.2,1.4,.4,1) both; }
-.tray.deal .slot:nth-child(2) .tray-piece { animation-delay: .03s; }
-.tray.deal .slot:nth-child(3) .tray-piece { animation-delay: .06s; }
+.tray { overflow: visible; }
+.tray.deal .tray-piece {
+  animation: deal .3s cubic-bezier(.16,1.3,.42,1) both;
+  animation-delay: var(--deal-delay, 0ms);
+}
+.tray.deal .slot:nth-child(2) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 55ms); }
+.tray.deal .slot:nth-child(3) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 110ms); }
 @keyframes deal {
-  from { transform: scale(.5); opacity: 0; }
-  to { transform: none; opacity: 1; }
+  0%   { transform: translateX(calc(100vw - 20%)) rotate(14deg) scale(.7); opacity: 0; }
+  20%  { opacity: 1; }
+  70%  { transform: translateX(-6px) rotate(-3deg) scale(1.06); }
+  100% { transform: none; opacity: 1; }
 }
 
 .ghost {

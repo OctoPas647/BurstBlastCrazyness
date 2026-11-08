@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.2.0';
+  BBC.VERSION = '1.3.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
@@ -78,7 +78,7 @@
     BBC.game = game;
     if (saved) game.restore(saved);
     else game.start();
-    BBC.ui.setGame(game);
+    BBC.ui.setGame(game, { fresh: !saved });
     BBC.saveGame();
     return game;
   };

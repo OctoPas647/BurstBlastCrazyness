@@ -69,14 +69,48 @@
     UI.theme = theme;
   };
 
-  UI.setGame = function (g) {
+  UI.setGame = function (g, opts) {
+    var fresh = opts && opts.fresh;
+    if (fresh && game && cellEls.length) wipeBoard();
     game = g;
     hideOver();
     buildBoard();
     shownScore = g.score;
     UI.renderAll();
+    dealAnim(fresh ? 120 : 0);
     if (g.over) setTimeout(showOver, 150);
   };
+
+  /** New hand: pieces fly in from the right, one after another, with a little overshoot. */
+  function dealAnim(delay) {
+    trayEl.classList.remove('deal');
+    void trayEl.offsetWidth;
+    trayEl.style.setProperty('--deal-delay', (delay || 0) + 'ms');
+    trayEl.classList.add('deal');
+    BBC.sfx.deal();
+    clearTimeout(dealAnim.t);
+    dealAnim.t = setTimeout(function () { trayEl.classList.remove('deal'); }, 420 + (delay || 0));
+  }
+
+  /** Restart: the old blocks pop away in a diagonal wave. */
+  function wipeBoard() {
+    var o = gridOrigin();
+    var pitch = cellPitch();
+    var layer = $('#fx');
+    for (var i = 0; i < game.board.length; i++) {
+      var cell = game.board[i];
+      if (!cell) continue;
+      var r = Math.floor(i / game.cols), c = i % game.cols;
+      var b = el('div', 'cell filled pop kind-' + cell.kind);
+      b.style.setProperty('--c', 'var(--p' + cell.color + ')');
+      b.style.width = b.style.height = o.width + 'px';
+      b.style.left = o.left + c * pitch + 'px';
+      b.style.top = o.top + r * pitch + 'px';
+      b.style.animationDelay = (r + c) * 12 + 'ms';
+      layer.appendChild(b);
+      (function (node) { setTimeout(function () { node.remove(); }, 600); })(b);
+    }
+  }
 
   function buildBoard() {
     boardEl.innerHTML = '';
@@ -391,10 +425,7 @@
     landBounce(res.cells);
     floatPoints(res);
     if (res.lines) praise(res);
-    if (res.newHand) {
-      trayEl.classList.add('deal');
-      setTimeout(function () { trayEl.classList.remove('deal'); }, 220);
-    }
+    if (res.newHand) dealAnim(res.cleared.length ? 90 : 0);
     BBC.saveGame();
     BBC.updateBest(game);
     if (game.over) {
