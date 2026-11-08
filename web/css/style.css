@@ -3,6 +3,25 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+/* Registered so biome changes fade smoothly instead of snapping. */
+@property --bg1 { syntax: '<color>'; inherits: true; initial-value: #1a0f3d; }
+@property --bg2 { syntax: '<color>'; inherits: true; initial-value: #3a1670; }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #ffd84d; }
+@property --sheet { syntax: '<color>'; inherits: true; initial-value: #211347; }
+@property --p0 { syntax: '<color>'; inherits: true; initial-value: #ff5470; }
+@property --p1 { syntax: '<color>'; inherits: true; initial-value: #ff9f43; }
+@property --p2 { syntax: '<color>'; inherits: true; initial-value: #ffd84d; }
+@property --p3 { syntax: '<color>'; inherits: true; initial-value: #3ddc84; }
+@property --p4 { syntax: '<color>'; inherits: true; initial-value: #2ec5ff; }
+@property --p5 { syntax: '<color>'; inherits: true; initial-value: #6c7bff; }
+@property --p6 { syntax: '<color>'; inherits: true; initial-value: #c06cff; }
+@property --p7 { syntax: '<color>'; inherits: true; initial-value: #ff6fd8; }
+
+:root {
+  transition: --bg1 1s, --bg2 1s, --accent 1s, --sheet 1s,
+    --p0 1s, --p1 1s, --p2 1s, --p3 1s, --p4 1s, --p5 1s, --p6 1s, --p7 1s;
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -264,6 +283,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   -webkit-text-stroke: 1px rgba(0,0,0,.25);
   text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 18px var(--accent);
 }
+.banner .praise-main { font-size: 30px; letter-spacing: 1px; }
+.banner { animation-duration: 1.4s; }
 .praise-combo {
   font-size: 22px;
   font-weight: 900;

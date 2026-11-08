@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -67,7 +68,7 @@ public class MainActivity extends ComponentActivity {
         });
 
         // Keep the game clear of the camera cutout; the gap shows the game's background color.
-        FrameLayout root = new FrameLayout(this);
+        final FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#1a0f3d"));
         root.addView(web, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -77,6 +78,20 @@ public class MainActivity extends ComponentActivity {
             return WindowInsetsCompat.CONSUMED;
         });
         setContentView(root);
+
+        // Lets the game recolor the cutout strip and window to match the current biome.
+        web.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void setBg(String hex) {
+                runOnUiThread(() -> {
+                    try {
+                        int c = Color.parseColor(hex);
+                        root.setBackgroundColor(c);
+                        web.setBackgroundColor(c);
+                    } catch (IllegalArgumentException ignored) { }
+                });
+            }
+        }, "BBCAndroid");
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl(START_URL);
 

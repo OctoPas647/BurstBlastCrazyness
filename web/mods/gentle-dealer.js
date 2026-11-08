@@ -9,6 +9,7 @@ BBC.mods.register({
   author: 'BurstBlastCrazyness',
   description: 'Rerolls any piece that has no space anywhere on the board (still random, just never a dead piece). Seeds stop being replayable with this on.',
   type: 'gameplay',
+  conflicts: ['smart-dealer'],
   settings: [
     { key: 'tries', label: 'Rerolls per piece', type: 'number', min: 1, max: 100, default: 20 }
   ],

@@ -4,6 +4,8 @@
  */
 window.BBC = window.BBC || {};
 BBC.MOD_FILES = [
+  'mods/smart-dealer.js',
+  'mods/biomes.js',
   'mods/big-board.js',
   'mods/crazy-shapes.js',
   'mods/bombs.js',

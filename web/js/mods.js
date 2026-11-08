@@ -234,6 +234,12 @@
         },
         refresh: function () {
           if (BBC.ui && BBC.ui.renderAll) BBC.ui.renderAll();
+        },
+        retheme: function () {
+          if (BBC.ui && BBC.ui.applyTheme) BBC.ui.applyTheme();
+        },
+        banner: function (text) {
+          if (BBC.ui && BBC.ui.banner) BBC.ui.banner(text);
         }
       }
     };

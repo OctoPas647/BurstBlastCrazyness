@@ -1,6 +1,6 @@
 # BurstBlastCrazyness
 
-An 8×8 block puzzle that deals you **truly random pieces**. No ads, no revives to buy, and no hidden system that watches your board and picks pieces to end your run.
+An 8×8 block puzzle with no ads and no revives to buy. By default the **Smart Dealer** reads your board and deals the hand that helps you most. Switch it off for **truly random** pieces.
 
 - Drag 3 pieces onto the board, fill rows **or** columns to clear them, then get 3 new pieces.
 - Combos for clearing on moves close together, big bonuses for clearing several lines at once.
@@ -15,7 +15,19 @@ An 8×8 block puzzle that deals you **truly random pieces**. No ads, no revives 
 | Browser | https://octopas647.github.io/burstblastcrazyness/ (after Pages is switched on, see below) |
 | Locally | `cd web && python3 -m http.server` then open http://localhost:8000 |
 
-## Why it's fair
+## Smart Dealer (on by default)
+
+On every new hand it runs a beam search over the board:
+
+1. For every shape, find its best spot and score the board that results.
+2. Keep the 6 best boards, then repeat for the 2nd and 3rd piece.
+3. Deal the 3 shapes from the best plan, in shuffled slot order.
+
+Scoring favours **big pieces** (1–2 block pieces are heavily penalised), **line clears**, **multi-line clears** and **full-board clears** (+3000). It also keeps the board open, with few holes and room for a 3×3. Each hand is guaranteed to fit, at least in the planned order. If you get stuck anyway, your leftover pieces are swapped for ones that fit.
+
+You can adjust Big piece preference (Normal / High / Max), Variety and stuck-swap under Mods → Smart Dealer. In a 6-game test, a simple bot scored about **35k–100k** over 450 moves with no game over. With random dealing it scored about **130–620** and died after 17–47 moves.
+
+## Pure random mode (Smart Dealer off)
 
 Write-ups about the popular games in this genre describe a dealer that reads your board and how well you're doing, then picks pieces that get harder when you're on a streak. This game works the other way:
 
@@ -37,12 +49,14 @@ The scoring follows the formula documented for the genre:
 
 | Mod | Type | What it does |
 | --- | --- | --- |
+| Smart Dealer | gameplay | On by default. Deals the most helpful hand, big pieces, swaps when stuck |
 | Big Board | gameplay | Board size 5–14 (default 10×10) |
 | Crazy Shapes | gameplay | Adds plus, U, ring, zig-zag and diagonal pieces |
 | Bombs | gameplay | Rare bomb block that destroys its 3×3 area |
 | Perfect Clear Bonus | gameplay | Bonus for emptying the whole board |
 | Gentle Dealer | gameplay | Rerolls pieces that can't fit anywhere (opt-in, clearly labelled) |
 | Zen Mode | gameplay | No game over |
+| Biomes | look | On by default. Calm color worlds (Twilight, Ocean, Forest, Desert, Tundra, Ember, Sakura), changing every 1500 points or fixed |
 | Neon Night | look | Neon color theme |
 | Square Blocks | look | Sharp-cornered blocks |
 

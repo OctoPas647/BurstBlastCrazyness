@@ -66,6 +66,8 @@
     }
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme.vars['--bg1']);
+    // Android app: match the strip around the camera cutout to the theme.
+    try { if (window.BBCAndroid) window.BBCAndroid.setBg(theme.vars['--bg1']); } catch (e) { /* ignore */ }
     UI.theme = theme;
   };
 
@@ -205,6 +207,7 @@
       combo.classList.remove('show');
     }
     $('#seed-text').textContent = BBC.seedToText(game.seed);
+    $('#chip-label').textContent = smartDealing() ? 'Smart dealer' : 'Fair dealing';
     var modCount = game.modIds.length;
     $('#mods-badge').textContent = modCount ? modCount : '';
     $('#mods-badge').style.display = modCount ? '' : 'none';
@@ -537,6 +540,21 @@
     $('#over').classList.remove('show');
   }
 
+  function smartDealing() {
+    return (BBC.mods._filters.dealHand || []).length > 0;
+  }
+
+  /** Big centered title, e.g. when a new biome starts. */
+  UI.banner = function (text) {
+    var bb = boardEl.getBoundingClientRect();
+    var p = el('div', 'praise banner');
+    p.appendChild(el('div', 'praise-main', text));
+    p.style.left = bb.left + bb.width / 2 + 'px';
+    p.style.top = bb.top - 34 + 'px';
+    $('#fx').appendChild(p);
+    setTimeout(function () { p.remove(); }, 1400);
+  };
+
   /* ---------- toast ---------- */
 
   UI.toast = function (msg, kind) {
@@ -710,15 +728,20 @@
   function renderFairTab(body) {
     body.appendChild(el('h3', null, 'How pieces are dealt'));
     var p = el('p');
-    p.textContent =
-      'Every piece is drawn on its own, at random, from the list of shapes below. ' +
-      'The dealer never looks at your board, your score, your combo or how long you have been playing. ' +
-      'There are no ads, no revives to buy and no difficulty that ramps up behind your back.';
+    var dealersOn = (BBC.mods._filters.dealHand || []).map(function (f) { return f.mod.name; });
+    p.textContent = dealersOn.length
+      ? dealersOn.join(', ') + ' is choosing your pieces. It looks at your board and picks the hand that helps you most: ' +
+        'big pieces that fit, line clears and full-board clears. It never deals against you. ' +
+        'Switch it off in Mods for pure random dealing (from the next game).'
+      : 'Every piece is drawn on its own, at random, from the list of shapes below. ' +
+        'The dealer never looks at your board, your score, your combo or how long you have been playing.';
     body.appendChild(p);
+    body.appendChild(el('p', 'muted', 'No ads, no revives to buy, no difficulty that ramps up behind your back.'));
 
     var weights = game.weights();
     var total = weights.reduce(function (a, b) { return a + Math.max(0, b); }, 0);
     var equal = weights.every(function (w) { return w === weights[0]; });
+    if (dealersOn.length) body.appendChild(el('h3', null, 'Shapes (odds when random)'));
     body.appendChild(el('p', 'muted',
       game.catalog.length + ' shapes in play. ' +
       (equal ? 'Every shape has the same chance: ' + (100 / game.catalog.length).toFixed(1) + '% each.'
@@ -734,16 +757,12 @@
     });
     body.appendChild(grid);
 
-    var dealers = BBC.mods._filters.dealHand || [];
-    if (dealers.length) {
-      body.appendChild(el('div', 'notice', 'Mod(s) changing how hands are dealt in this game: ' +
-        dealers.map(function (f) { return f.mod.name; }).join(', ') + '.'));
-    }
 
     body.appendChild(el('h3', null, 'Seed'));
     body.appendChild(el('p', 'muted',
-      'This game\'s seed is ' + BBC.seedToText(game.seed) + '. Start a game with the same seed and you get exactly the same pieces in the same order, ' +
-      'whatever you do on the board. Send it to a friend and compare scores.'));
+      'This game\'s seed is ' + BBC.seedToText(game.seed) + '. ' + (dealersOn.length
+        ? 'With a smart dealer on, the pieces depend on how you play, so a seed only replays the first hand exactly.'
+        : 'Start a game with the same seed and you get exactly the same pieces in the same order, whatever you do on the board. Send it to a friend and compare scores.')));
     var row = el('div', 'seed-row');
     var input = el('input');
     input.placeholder = 'Type a seed (or any word)';

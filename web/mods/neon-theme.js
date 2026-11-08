@@ -7,7 +7,7 @@ BBC.mods.register({
   author: 'BurstBlastCrazyness',
   description: 'Black background with glowing neon blocks.',
   type: 'cosmetic',
-  conflicts: [],
+  conflicts: ['biomes'],
   setup: function (api) {
     api.filter('theme', function (t) {
       t.vars['--bg1'] = '#050508';
