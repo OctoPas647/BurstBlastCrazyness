@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.0.0';
+  BBC.VERSION = '1.1.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
@@ -15,7 +15,7 @@
     try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* ignore */ }
   }
 
-  BBC.settings = Object.assign({ sound: true, haptics: true }, read(SETTINGS_KEY) || {});
+  BBC.settings = Object.assign({ sound: true, haptics: true, dragSpeed: 1.25 }, read(SETTINGS_KEY) || {});
   BBC.saveSettings = function () { write(SETTINGS_KEY, BBC.settings); };
 
   /* ---------- best scores (one per ruleset, so modded games don't mix with classic) ---------- */

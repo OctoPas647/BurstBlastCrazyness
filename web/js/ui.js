@@ -74,7 +74,7 @@
     buildBoard();
     shownScore = g.score;
     UI.renderAll();
-    if (g.over) setTimeout(showOver, 300);
+    if (g.over) setTimeout(showOver, 150);
   };
 
   function buildBoard() {
@@ -123,6 +123,10 @@
     if (!game) return;
     trayEl.innerHTML = '';
     var mini = miniSize();
+    // Fixed height = room for the tallest possible piece (5 blocks), so the
+    // layout never shifts when a new hand arrives.
+    var trayH = Math.round(5 * mini + 24) + 'px';
+    if (trayEl.style.getPropertyValue('--tray-h') !== trayH) trayEl.style.setProperty('--tray-h', trayH);
     game.hand.forEach(function (p, slot) {
       var s = el('div', 'slot');
       s.dataset.slot = slot;
@@ -180,7 +184,7 @@
       return;
     }
     var t0 = performance.now();
-    var dur = Math.min(600, 150 + Math.abs(target - from) * 2);
+    var dur = Math.min(280, 80 + Math.abs(target - from));
     (function step(now) {
       var k = Math.min(1, (now - t0) / dur);
       shownScore = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
@@ -228,6 +232,9 @@
       h: p.h * pitch - gap,
       lift: touch ? pitch * 1.4 : 0,
       pitch: pitch,
+      sx: e.clientX,
+      sy: e.clientY,
+      speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
       target: null,
       fromRect: slotEl.querySelector('.piece').getBoundingClientRect()
     };
@@ -237,17 +244,33 @@
   }
 
   function positionGhost(x, y) {
+    // Drag speed: the piece travels further than your finger (touch only).
+    x = drag.sx + (x - drag.sx) * drag.speed;
+    y = drag.sy + (y - drag.sy) * drag.speed;
     var left = x - drag.w / 2;
     var top = drag.lift ? y - drag.h - drag.lift : y - drag.h / 2;
     drag.ghost.style.transform = 'translate(' + left + 'px,' + top + 'px)';
     var o = gridOrigin();
-    var c = Math.round((left - o.left) / drag.pitch);
-    var r = Math.round((top - o.top) / drag.pitch);
-    var target = game.canPlace(drag.piece, r, c) ? { r: r, c: c } : null;
+    var target = snapTarget((top - o.top) / drag.pitch, (left - o.left) / drag.pitch);
     if (!sameTarget(target, drag.target)) {
       drag.target = target;
       showPreview(target);
     }
+  }
+
+  /** Nearest spot the piece fits, within ~0.8 of a cell, so quick drops still land. */
+  function snapTarget(fr, fc) {
+    var r0 = Math.round(fr), c0 = Math.round(fc);
+    if (game.canPlace(drag.piece, r0, c0)) return { r: r0, c: c0 };
+    var best = null, bestD = 0.8 * 0.8;
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        var r = r0 + dr, c = c0 + dc;
+        var d = (r - fr) * (r - fr) + (c - fc) * (c - fc);
+        if (d < bestD && game.canPlace(drag.piece, r, c)) { best = { r: r, c: c }; bestD = d; }
+      }
+    }
+    return best;
   }
 
   function sameTarget(a, b) {
@@ -286,7 +309,7 @@
     setTimeout(function () {
       d.ghost.remove();
       renderTray();
-    }, 180);
+    }, 120);
     BBC.sfx.drop();
   }
 
@@ -336,11 +359,13 @@
     UI.renderAll();
     landBounce(res.cells);
     floatPoints(res);
-    if (res.lines >= 2 || res.perfect) shake();
-    if (res.newHand) trayEl.classList.add('deal'), setTimeout(function () { trayEl.classList.remove('deal'); }, 400);
+    if (res.newHand) {
+      trayEl.classList.add('deal');
+      setTimeout(function () { trayEl.classList.remove('deal'); }, 220);
+    }
     BBC.saveGame();
     BBC.updateBest(game);
-    if (game.over) setTimeout(showOver, 700);
+    if (game.over) setTimeout(showOver, 350);
   }
 
   function landBounce(cells) {
@@ -348,7 +373,7 @@
       var e = cellEls[game.idx(rc[0], rc[1])];
       if (!e || !game.board[game.idx(rc[0], rc[1])]) return;
       e.classList.add('land');
-      setTimeout(function () { e.classList.remove('land'); }, 220);
+      setTimeout(function () { e.classList.remove('land'); }, 140);
     });
   }
 
@@ -363,9 +388,9 @@
       b.style.width = b.style.height = size + 'px';
       b.style.left = o.left + x.c * pitch + 'px';
       b.style.top = o.top + x.r * pitch + 'px';
-      b.style.animationDelay = (n % 8) * 18 + 'ms';
+      b.style.animationDelay = (n % 8) * 8 + 'ms';
       layer.appendChild(b);
-      setTimeout(function () { b.remove(); }, 650);
+      setTimeout(function () { b.remove(); }, 380);
     });
   }
 
@@ -388,14 +413,7 @@
     f.style.left = x + 'px';
     f.style.top = y + 'px';
     $('#fx').appendChild(f);
-    setTimeout(function () { f.remove(); }, 1100);
-  }
-
-  function shake() {
-    var w = $('#play');
-    w.classList.remove('shake');
-    void w.offsetWidth;
-    w.classList.add('shake');
+    setTimeout(function () { f.remove(); }, 720);
   }
 
   function vibrate(p) {
@@ -667,6 +685,21 @@
   function renderSettingsTab(body) {
     body.appendChild(toggleRow('Sound', 'sound'));
     body.appendChild(toggleRow('Vibration', 'haptics'));
+    var ds = el('label', 'field');
+    ds.appendChild(el('span', null, 'Drag speed (touch)'));
+    var sel = el('select');
+    [['1', '1× (follows finger)'], ['1.25', '1.25×'], ['1.5', '1.5×'], ['1.75', '1.75×'], ['2', '2×']].forEach(function (o) {
+      var opt = el('option', null, o[1]);
+      opt.value = o[0];
+      if (+o[0] === +BBC.settings.dragSpeed) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function () {
+      BBC.settings.dragSpeed = +sel.value;
+      BBC.saveSettings();
+    });
+    ds.appendChild(sel);
+    body.appendChild(ds);
     var stats = el('div', 'stats');
     stats.appendChild(el('div', null, 'Score: ' + game.score.toLocaleString()));
     stats.appendChild(el('div', null, 'Moves: ' + game.moves));
