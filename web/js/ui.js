@@ -39,7 +39,37 @@
   UI.init = function () {
     boardEl = $('#board');
     trayEl = $('#tray');
-    $('#btn-menu').addEventListener('click', function () { UI.openSheet('mods'); });
+    $('#btn-menu').addEventListener('click', function () { UI.pause(); });
+    $('#pause-resume').addEventListener('click', function () { UI.resume(); });
+    $('#pause').addEventListener('click', function (e) { if (e.target.id === 'pause') UI.resume(); });
+    $('#pause-restart').addEventListener('click', function () {
+      var b = $('#pause-restart');
+      if (b.dataset.armed) {
+        UI.resume();
+        BBC.newGame();
+      } else {
+        b.dataset.armed = '1';
+        b.textContent = 'Tap again to restart';
+        b.classList.add('warn');
+      }
+    });
+    document.querySelectorAll('.round-toggle').forEach(function (t) {
+      t.addEventListener('click', function () {
+        var key = t.getAttribute('data-setting');
+        BBC.settings[key] = !BBC.settings[key];
+        BBC.saveSettings();
+        if (key === 'haptics' && BBC.settings.haptics) vibrate(20);
+        if (key === 'sound' && BBC.settings.sound) BBC.sfx.pick();
+        syncToggles();
+      });
+    });
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { UI.openSheet(b.getAttribute('data-open')); });
+    });
+    // Leaving the app pauses the game, so you come back to the pause menu.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && game && !game.over) UI.pause();
+    });
     $('#seed-chip').addEventListener('click', function () { UI.openSheet('fair'); });
     $('#sheet-close').addEventListener('click', UI.closeSheet);
     $('#sheet-backdrop').addEventListener('click', UI.closeSheet);
@@ -253,6 +283,7 @@
    */
   function onPickDown(e) {
     if (!game || game.over || drag) return;
+    if (document.body.classList.contains('paused')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.target.closest('button, a, input, select, textarea, .sheet, .over, #seed-chip')) return;
     var bb = boardEl.getBoundingClientRect();
@@ -591,8 +622,39 @@
       UI.closeSheet();
       return true;
     }
+    if ($('#pause').classList.contains('show')) {
+      UI.resume();
+      return true;
+    }
     return false;
   };
+
+  /* ---------- pause menu ---------- */
+
+  UI.pause = function () {
+    if (!game || game.over) return;
+    if (drag) cancelDrag();
+    $('#pause-score').textContent = game.score.toLocaleString();
+    $('#pause-best').textContent = Math.max(BBC.getBest(BBC.bestKey(game)), game.score).toLocaleString();
+    var r = $('#pause-restart');
+    delete r.dataset.armed;
+    r.textContent = 'Restart';
+    r.classList.remove('warn');
+    syncToggles();
+    $('#pause').classList.add('show');
+    document.body.classList.add('paused');
+  };
+
+  UI.resume = function () {
+    $('#pause').classList.remove('show');
+    document.body.classList.remove('paused');
+  };
+
+  function syncToggles() {
+    document.querySelectorAll('.round-toggle').forEach(function (t) {
+      t.classList.toggle('off', !BBC.settings[t.getAttribute('data-setting')]);
+    });
+  }
 
   UI.onModsChanged = function () {
     if (currentTab === 'mods') UI.openSheet('mods');
