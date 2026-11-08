@@ -17,21 +17,62 @@
     max: { per: 26, tiny: 320, three: 90 }
   };
 
-  function plan(g, rng, opts, steps) {
-    var R = g.rows, C = g.cols, N = R * C;
-    var shapes = g.catalog.filter(function (s) { return (s.kind || 'normal') === 'normal'; });
-    var start = new Uint8Array(N);
-    for (var i = 0; i < N; i++) start[i] = g.board[i] ? 1 : 0;
+  function normalShapes(g) {
+    return g.catalog.filter(function (s) { return (s.kind || 'normal') === 'normal'; });
+  }
+
+  function boardBits(g) {
+    var b = new Uint8Array(g.rows * g.cols);
+    for (var i = 0; i < b.length; i++) b[i] = g.board[i] ? 1 : 0;
+    return b;
+  }
+
+  /** Shapes that can clear at least one line right now, best first. */
+  function clearers(g, opts) {
+    var R = g.rows, C = g.cols, b = boardBits(g), out = [];
+    normalShapes(g).forEach(function (sh) {
+      var best = null;
+      for (var r = 0; r <= R - sh.h; r++) {
+        for (var c = 0; c <= C - sh.w; c++) {
+          if (!fits(b, C, sh, r, c)) continue;
+          var res = place(b, R, C, sh, r, c);
+          if (!res.lines) continue;
+          var v = moveValue(res, sh, R, C, opts);
+          if (best === null || v > best) best = v;
+        }
+      }
+      if (best !== null) out.push({ shape: sh, value: best });
+    });
+    out.sort(function (a, b2) { return b2.value - a.value; });
+    return out;
+  }
+
+  /** Can this piece clear a line somewhere on the current board? */
+  function canClear(g, piece) {
+    var R = g.rows, C = g.cols, b = boardBits(g);
+    for (var r = 0; r <= R - piece.h; r++) {
+      for (var c = 0; c <= C - piece.w; c++) {
+        if (fits(b, C, piece, r, c) && place(b, R, C, piece, r, c).lines) return true;
+      }
+    }
+    return false;
+  }
+
+  function plan(g, rng, opts, steps, firstShapes) {
+    var R = g.rows, C = g.cols;
+    var shapes = normalShapes(g);
+    var start = boardBits(g);
 
     var beam = [{ b: start, picks: [], score: 0 }];
     var width = 6;
 
     for (var step = 0; step < (steps || g.handSize); step++) {
       var next = [];
+      var pool = step === 0 && firstShapes ? firstShapes : shapes;
       for (var k = 0; k < beam.length; k++) {
         var st = beam[k];
-        for (var s = 0; s < shapes.length; s++) {
-          var sh = shapes[s];
+        for (var s = 0; s < pool.length; s++) {
+          var sh = pool[s];
           var best = null;
           for (var r = 0; r <= R - sh.h; r++) {
             for (var c = 0; c <= C - sh.w; c++) {
@@ -140,7 +181,7 @@
     name: 'Smart Dealer',
     version: '1.0.0',
     author: 'BurstBlastCrazyness',
-    description: 'Looks at your board and deals the hand that helps most: big pieces that always fit, set up line clears and go for full-board clears. Turn it off for pure random dealing.',
+    description: 'Looks at your board and deals the hand that helps most: big pieces that always fit, always at least one piece that clears a line, and plans for full-board clears. Turn it off for pure random dealing.',
     type: 'gameplay',
     defaultEnabled: true,
     conflicts: ['gentle-dealer'],
@@ -148,13 +189,25 @@
       { key: 'big', label: 'Big piece preference', type: 'select', default: 'high',
         options: [{ value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }] },
       { key: 'chaos', label: 'Variety (0–100)', type: 'number', min: 0, max: 100, default: 25 },
+      { key: 'winning', label: 'Always a line-clearing piece', type: 'boolean', default: true },
       { key: 'rescue', label: 'Swap pieces when stuck', type: 'boolean', default: true }
     ],
     setup: function (api) {
       api.filter('dealHand', function (hand, ctx) {
         var g = ctx.game;
-        var picks = plan(g, ctx.rng, { big: api.setting('big'), chaos: api.setting('chaos') * 4 });
+        var opts = { big: api.setting('big'), chaos: api.setting('chaos') * 4 };
+        var picks = plan(g, ctx.rng, opts);
         if (!picks) return hand; // nothing fits at all → normal deal (game over)
+        // Make sure the hand holds a piece that clears a line right away.
+        if (api.setting('winning')) {
+          var cl = clearers(g, opts);
+          var ids = {};
+          cl.forEach(function (x) { ids[x.shape.id] = true; });
+          if (cl.length && !picks.some(function (sh) { return ids[sh.id]; })) {
+            var forced = plan(g, ctx.rng, opts, g.handSize, cl.slice(0, 8).map(function (x) { return x.shape; }));
+            if (forced) picks = forced;
+          }
+        }
         var out = picks.map(function (sh) { return g.makePiece(sh); });
         while (out.length < g.handSize) out.push(ctx.draw());
         for (var i = out.length - 1; i > 0; i--) {
@@ -162,6 +215,24 @@
           var t = out[i]; out[i] = out[j]; out[j] = t;
         }
         return out;
+      });
+
+      // After every move: if none of your remaining pieces can clear a line but
+      // some piece could, swap the least useful one for the best line-clearer.
+      api.on('moveDone', function (ctx) {
+        if (!api.setting('winning')) return;
+        var g = ctx.game;
+        var left = [];
+        g.hand.forEach(function (p, i) { if (p) left.push(i); });
+        if (!left.length) return; // a new hand is coming, it gets the same guarantee
+        if (left.some(function (i) { return canClear(g, g.hand[i]); })) return;
+        var cl = clearers(g, { big: api.setting('big') });
+        if (!cl.length) return;
+        var slot = left.reduce(function (a, b) {
+          return g.hand[b].cells.length < g.hand[a].cells.length ? b : a;
+        });
+        g.hand[slot] = g.makePiece(cl[0].shape);
+        g.hand[slot].swapped = true;
       });
 
       // Stuck with pieces left? Swap the leftovers for ones that fit.
@@ -173,7 +244,10 @@
         if (!slots.length) return stuck;
         var picks = plan(g, g.rng, { big: api.setting('big'), chaos: api.setting('chaos') * 4 }, slots.length);
         if (!picks) return true;
-        slots.forEach(function (slot, i) { g.hand[slot] = picks[i] ? g.makePiece(picks[i]) : null; });
+        slots.forEach(function (slot, i) {
+          g.hand[slot] = picks[i] ? g.makePiece(picks[i]) : null;
+          if (g.hand[slot]) g.hand[slot].swapped = true;
+        });
         api.ui.banner('Fresh pieces!');
         return false;
       }, 5);

@@ -201,6 +201,10 @@
         var fits = game.fitsAnywhere(p);
         var wrap = pieceEl(p, mini, Math.max(2, mini * 0.08));
         wrap.classList.add('tray-piece');
+        if (p.swapped) {
+          wrap.classList.add('swap-in');
+          delete p.swapped;
+        }
         if (!fits) s.classList.add('nofit');
         if (drag && drag.slot === slot) s.classList.add('dragging');
         s.appendChild(wrap);
