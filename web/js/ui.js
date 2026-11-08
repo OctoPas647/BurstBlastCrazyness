@@ -48,7 +48,8 @@
     });
     $('#over-new').addEventListener('click', function () { hideOver(); BBC.newGame(); });
     $('#over-replay').addEventListener('click', function () { hideOver(); BBC.newGame({ seed: game.seed }); });
-    trayEl.addEventListener('pointerdown', onTrayDown);
+    document.addEventListener('pointerdown', onPickDown, { passive: false });
+    document.addEventListener('contextmenu', function (e) { if (!e.target.closest('.sheet-body')) e.preventDefault(); });
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
@@ -208,13 +209,32 @@
 
   /* ---------- drag & drop ---------- */
 
-  function onTrayDown(e) {
+  /**
+   * Big pick-up zones: anywhere below the board counts. The touch is matched
+   * to the column (left / middle / right) it lands in; if that slot is
+   * already used, the nearest piece still in the tray is picked instead.
+   */
+  function onPickDown(e) {
     if (!game || game.over || drag) return;
-    var slotEl = e.target.closest('.slot');
-    if (!slotEl) return;
-    var slot = +slotEl.dataset.slot;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('button, a, input, select, textarea, .sheet, .over, #seed-chip')) return;
+    var bb = boardEl.getBoundingClientRect();
+    if (e.clientY < bb.bottom + 2) return;
+    var tr = trayEl.getBoundingClientRect();
+    var n = game.hand.length;
+    var col = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - tr.left) / tr.width) * n)));
+    var slot = -1, bestD = Infinity;
+    for (var i = 0; i < n; i++) {
+      if (game.hand[i] && Math.abs(i - col) < bestD) { slot = i; bestD = Math.abs(i - col); }
+    }
+    if (slot < 0) return;
+    startDrag(e, slot);
+  }
+
+  function startDrag(e, slot) {
+    var slotEl = trayEl.querySelector('.slot[data-slot="' + slot + '"]');
     var p = game.hand[slot];
-    if (!p) return;
+    if (!p || !slotEl) return;
     e.preventDefault();
     var pitch = cellPitch();
     var cellSize = gridOrigin().width;
@@ -240,7 +260,16 @@
     };
     slotEl.classList.add('dragging');
     BBC.sfx.pick();
+    // Grow from tray size to board size as it lifts off.
+    var k = drag.fromRect.width / drag.w;
+    ghost.style.scale = k;
     positionGhost(e.clientX, e.clientY);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        ghost.classList.add('lifted');
+        ghost.style.scale = 1;
+      });
+    });
   }
 
   function positionGhost(x, y) {
@@ -304,8 +333,10 @@
     drag = null;
     showPreview(null);
     var to = d.fromRect;
+    var k = to.width / d.w;
     d.ghost.classList.add('returning');
-    d.ghost.style.transform = 'translate(' + to.left + 'px,' + to.top + 'px) scale(' + to.width / d.w + ')';
+    d.ghost.style.scale = k;
+    d.ghost.style.transform = 'translate(' + (to.left - (d.w / 2) * (1 - k)) + 'px,' + (to.top - d.h * (1 - k)) + 'px)';
     setTimeout(function () {
       d.ghost.remove();
       renderTray();
@@ -359,13 +390,17 @@
     UI.renderAll();
     landBounce(res.cells);
     floatPoints(res);
+    if (res.lines) praise(res);
     if (res.newHand) {
       trayEl.classList.add('deal');
       setTimeout(function () { trayEl.classList.remove('deal'); }, 220);
     }
     BBC.saveGame();
     BBC.updateBest(game);
-    if (game.over) setTimeout(showOver, 350);
+    if (game.over) {
+      var t = greyOut();
+      setTimeout(showOver, t + 250);
+    }
   }
 
   function landBounce(cells) {
@@ -414,6 +449,38 @@
     f.style.top = y + 'px';
     $('#fx').appendChild(f);
     setTimeout(function () { f.remove(); }, 720);
+  }
+
+  var PRAISE = ['', '', 'Good!', 'Great!', 'Excellent!', 'Amazing!', 'Unbelievable!'];
+
+  /** Big centered callout for multi-line clears and combos. */
+  function praise(res) {
+    var text = res.perfect ? 'Board clear!' : PRAISE[Math.min(res.lines, PRAISE.length - 1)];
+    var combo = res.combo >= 2 ? 'Combo ' + res.combo : '';
+    if (!text && !combo) return;
+    var bb = boardEl.getBoundingClientRect();
+    var p = el('div', 'praise');
+    if (text) p.appendChild(el('div', 'praise-main', text));
+    if (combo) p.appendChild(el('div', 'praise-combo', combo));
+    p.style.left = bb.left + bb.width / 2 + 'px';
+    p.style.top = bb.top + bb.height * 0.42 + 'px';
+    $('#fx').appendChild(p);
+    setTimeout(function () { p.remove(); }, 900);
+  }
+
+  /** Game over: blocks turn grey from the bottom row up. Returns duration in ms. */
+  function greyOut() {
+    var step = 35;
+    for (var r = game.rows - 1; r >= 0; r--) {
+      (function (row, delay) {
+        setTimeout(function () {
+          for (var c = 0; c < game.cols; c++) {
+            if (game.board[game.idx(row, c)]) cellEls[game.idx(row, c)].classList.add('dead');
+          }
+        }, delay);
+      })(r, (game.rows - 1 - r) * step);
+    }
+    return game.rows * step;
   }
 
   function vibrate(p) {
