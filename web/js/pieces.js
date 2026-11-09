@@ -1,8 +1,8 @@
 /* BurstBlastCrazyness — piece shapes.
  * Shapes are written as ASCII art: '#' = block, '.' = empty.
- * The classic set has 37 shapes (all rotations counted separately),
- * the same family of polyominoes the genre uses: lines, squares,
- * rectangles, small and big corners, L/J, T and S/Z.
+ * The base set: lines, squares, rectangles, small and big corners, L/J,
+ * T and S/Z, plus a bigger family (long L/J, P/Q, big T, U, plus, 2×4,
+ * big S/Z). All rotations are counted as separate shapes.
  */
 (function (BBC) {
   'use strict';
@@ -80,6 +80,17 @@
     s = s.concat(rotations('S4', ['.##', '##.']));
     s = s.concat(rotations('Z4', ['##.', '.##']));
     s = s.concat(rotations('corner5', ['###', '#..', '#..']));
+    // Bigger family (pentominoes and friends)
+    s = s.concat(rotations('L5', ['#.', '#.', '#.', '##']));
+    s = s.concat(rotations('J5', ['.#', '.#', '.#', '##']));
+    s = s.concat(rotations('P5', ['##', '##', '#.']));
+    s = s.concat(rotations('Q5', ['##', '##', '.#']));
+    s = s.concat(rotations('T5', ['###', '.#.', '.#.']));
+    s = s.concat(rotations('U5', ['#.#', '###']));
+    s.push(fromArt('plus5', ['.#.', '###', '.#.']));
+    s = s.concat(rotations('rect24', ['####', '####']));
+    s = s.concat(rotations('S5', ['..#', '###', '#..']));
+    s = s.concat(rotations('Z5', ['#..', '###', '..#']));
     return s;
   }
 

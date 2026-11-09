@@ -64,46 +64,68 @@
     var start = boardBits(g);
 
     var beam = [{ b: start, picks: [], score: 0 }];
-    var width = 6;
+    var width = 8;
+    var scratch = new Uint8Array(R * C);
+    var recent = opts.recent || {};
 
+    var shortlist = null;
     for (var step = 0; step < (steps || g.handSize); step++) {
       var next = [];
-      var pool = step === 0 && firstShapes ? firstShapes : shapes;
+      var pool = step === 0 ? (firstShapes || shapes) : shortlist || shapes;
+      for (var pass = 0; pass < 2 && !next.length; pass++) {
       for (var k = 0; k < beam.length; k++) {
         var st = beam[k];
         for (var s = 0; s < pool.length; s++) {
           var sh = pool[s];
+          // No repeated shape in one hand, unless nothing else fits (2nd pass).
+          if (pass === 0 && hasFamily(st.picks, sh)) continue;
           var best = null;
           for (var r = 0; r <= R - sh.h; r++) {
             for (var c = 0; c <= C - sh.w; c++) {
               if (!fits(st.b, C, sh, r, c)) continue;
-              var res = place(st.b, R, C, sh, r, c);
+              var res = place(st.b, R, C, sh, r, c, scratch);
               var v = st.score + moveValue(res, sh, R, C, opts);
-              if (!best || v > best.score) best = { b: res.b, picks: st.picks.concat([sh]), score: v };
+              if (!best || v > best.score) best = { b: res.b.slice(), picks: st.picks.concat([sh]), score: v };
             }
           }
           if (best) next.push(best);
         }
       }
+      if (!next.length && pool !== shapes) pool = shapes; // shortlist exhausted: widen
+      }
       if (!next.length) break;
+      if (step === 0 && !shortlist) {
+        // Later steps only look at the 28 most promising shapes (plus a few random ones): ~2x faster.
+        var ranked = next.slice().sort(function (a, b2) { return b2.score - a.score; });
+        shortlist = ranked.slice(0, 28).map(function (x) { return x.picks[0]; });
+        for (var extra = 0; extra < 4; extra++) shortlist.push(shapes[rng.int(shapes.length)]);
+      }
       var noise = opts.chaos;
       for (var n = 0; n < next.length; n++) {
+        // Variety: same shape family twice in a hand, or shapes from the last
+        // couple of hands, cost points, so you see a wider mix.
         var dupes = 0;
         var last = next[n].picks[next[n].picks.length - 1];
-        for (var q = 0; q < next[n].picks.length - 1; q++) if (next[n].picks[q].id === last.id) dupes++;
-        next[n].rank = next[n].score - dupes * 60 + (rng.next() - 0.5) * noise;
+        var fam = family(last.id);
+        for (var q = 0; q < next[n].picks.length - 1; q++) if (family(next[n].picks[q].id) === fam) dupes++;
+        next[n].rank = next[n].score - dupes * 400 - (recent[fam] || 0) * 90 + (rng.next() - 0.5) * noise;
       }
       next.sort(function (a, b) { return b.rank - a.rank; });
       beam = next.slice(0, width);
     }
     if (!beam[0] || !beam[0].picks.length) return null;
-    // Prefer a plan that still works whatever order you place the pieces in.
-    for (var b2 = 0; b2 < beam.length; b2++) {
-      if (beam[b2].picks.length === (steps || g.handSize) && anyOrderWorks(start, R, C, beam[b2].picks, opts)) {
-        return beam[b2].picks;
-      }
+    var want = steps || g.handSize;
+    var full = beam.filter(function (x) { return x.picks.length === want; });
+    var distinct = full.filter(function (x) { return noRepeats(x.picks); });
+    // Best: no repeated shape AND works in any order. Then any-order. Then no repeats.
+    var i;
+    for (i = 0; i < distinct.length; i++) {
+      if (anyOrderWorks(start, R, C, distinct[i].picks, opts)) return distinct[i].picks;
     }
-    return beam[0].picks;
+    for (i = 0; i < Math.min(2, full.length); i++) {
+      if (anyOrderWorks(start, R, C, full[i].picks, opts)) return full[i].picks;
+    }
+    return (distinct[0] || beam[0]).picks;
   }
 
   /** Every placement order fits if each piece goes on its best spot at that moment. */
@@ -139,6 +161,27 @@
     return out;
   }
 
+  function hasFamily(picks, sh) {
+    var f = family(sh.id);
+    for (var i = 0; i < picks.length; i++) if (family(picks[i].id) === f) return true;
+    return false;
+  }
+
+  function noRepeats(picks) {
+    var seen = {};
+    for (var i = 0; i < picks.length; i++) {
+      var f = family(picks[i].id);
+      if (seen[f]) return false;
+      seen[f] = true;
+    }
+    return true;
+  }
+
+  function family(id) {
+    var i = id.lastIndexOf('_');
+    return i > 0 ? id.slice(0, i) : id;
+  }
+
   function fits(b, C, sh, r, c) {
     for (var i = 0; i < sh.cells.length; i++) {
       if (b[(r + sh.cells[i][0]) * C + c + sh.cells[i][1]]) return false;
@@ -146,8 +189,9 @@
     return true;
   }
 
-  function place(src, R, C, sh, r, c) {
-    var b = src.slice();
+  function place(src, R, C, sh, r, c, into) {
+    var b = into || new Uint8Array(src.length);
+    b.set(src);
     for (var i = 0; i < sh.cells.length; i++) b[(r + sh.cells[i][0]) * C + c + sh.cells[i][1]] = 1;
     var rows = [], cols = [], x, y, full;
     for (y = 0; y < R; y++) {
@@ -233,9 +277,17 @@
       { key: 'rescue', label: 'Swap pieces when stuck (changes your hand)', type: 'boolean', default: false }
     ],
     setup: function (api) {
+      // Shape families from the last couple of hands (fades out over time).
+      var recent = {};
+      function remember(picks) {
+        Object.keys(recent).forEach(function (k) { recent[k] *= 0.5; if (recent[k] < 0.2) delete recent[k]; });
+        picks.forEach(function (sh) { var f = family(sh.id); recent[f] = (recent[f] || 0) + 1; });
+      }
+
       api.filter('dealHand', function (hand, ctx) {
         var g = ctx.game;
         var opts = { big: api.setting('big'), chaos: api.setting('chaos') * 4 };
+        opts.recent = recent;
         var picks = plan(g, ctx.rng, opts);
         if (!picks) return hand; // nothing fits at all → normal deal (game over)
         // Make sure the hand holds a piece that clears a line right away.
@@ -248,6 +300,7 @@
             if (forced) picks = forced;
           }
         }
+        remember(picks);
         var out = picks.map(function (sh) { return g.makePiece(sh); });
         while (out.length < g.handSize) out.push(ctx.draw());
         for (var i = out.length - 1; i > 0; i--) {

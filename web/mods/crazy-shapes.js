@@ -4,14 +4,12 @@ BBC.mods.register({
   name: 'Crazy Shapes',
   version: '1.0.0',
   author: 'BurstBlastCrazyness',
-  description: 'Adds pluses, U-shapes, hollow squares, zig-zags and diagonal steps to the shape list.',
+  description: 'Adds hollow squares, zig-zag stairs, X shapes and diagonal steps to the shape list.',
   type: 'gameplay',
   setup: function (api) {
     var P = api.pieces;
     api.filter('pieceCatalog', function (list) {
       var extra = [];
-      extra.push(P.fromArt('crazy_plus', ['.#.', '###', '.#.']));
-      extra = extra.concat(P.rotations('crazy_u', ['#.#', '###']));
       extra.push(P.fromArt('crazy_ring', ['###', '#.#', '###']));
       extra = extra.concat(P.rotations('crazy_w', ['#..', '##.', '.##']));
       extra = extra.concat(P.rotations('crazy_diag2', ['#.', '.#']));

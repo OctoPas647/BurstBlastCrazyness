@@ -16,15 +16,13 @@
     { id: 'sakura', name: 'Sakura', bg1: '#291a29', bg2: '#482b44', accent: '#ecb2c8', sheet: '#382236',
       palette: ['#da7a8f', '#da9b7c', '#d9c48f', '#8dc098', '#79b3c3', '#8e98d3', '#b08ed3', '#d99bbe'] }
   ];
-  var EVERY = 1500; // points per biome in Auto mode
 
   function current(api) {
     var pick = api.setting('biome');
     if (pick && pick !== 'auto') {
       for (var i = 0; i < BIOMES.length; i++) if (BIOMES[i].id === pick) return BIOMES[i];
     }
-    var score = api.game ? api.game.score : 0;
-    return BIOMES[Math.floor(score / EVERY) % BIOMES.length];
+    return BIOMES[(api.storage.get('index', 0) || 0) % BIOMES.length];
   }
 
   BBC.mods.register({
@@ -32,13 +30,13 @@
     name: 'Biomes',
     version: '1.0.0',
     author: 'BurstBlastCrazyness',
-    description: 'Calm color worlds: Twilight, Ocean, Forest, Desert, Tundra, Ember, Sakura. On Auto, the world changes every 1500 points.',
+    description: 'Calm color worlds: Twilight, Ocean, Forest, Desert, Tundra, Ember, Sakura. On Auto, you move to the next world (new colors) only when you clear the entire board.',
     type: 'cosmetic',
     defaultEnabled: true,
     conflicts: ['neon-theme'],
     settings: [
       { key: 'biome', label: 'Biome', type: 'select', default: 'auto',
-        options: [{ value: 'auto', label: 'Auto (changes with score)' }].concat(
+        options: [{ value: 'auto', label: 'Auto (next world on a full-board clear)' }].concat(
           BIOMES.map(function (b) { return { value: b.id, label: b.name }; })) }
     ],
     setup: function (api) {
@@ -53,12 +51,20 @@
         t.palette = b.palette.slice();
         return t;
       });
-      api.on('moveDone', function () {
+      // A new game starts in the first world; a resumed game keeps its world.
+      api.on('gameStart', function () {
+        api.storage.set('index', 0);
+        if (shown !== current(api).id) api.ui.retheme();
+      });
+      // Only a full-board clear moves you on to the next world.
+      api.on('linesCleared', function (e) {
+        if (!e.result.perfect || (api.setting('biome') || 'auto') !== 'auto') return;
+        api.storage.set('index', ((api.storage.get('index', 0) || 0) + 1) % BIOMES.length);
         var b = current(api);
-        if (b.id !== shown) {
+        setTimeout(function () {
           api.ui.retheme();
           api.ui.banner(b.name);
-        }
+        }, 450);
       });
     }
   });

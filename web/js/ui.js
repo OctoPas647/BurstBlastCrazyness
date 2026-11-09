@@ -357,13 +357,12 @@
       scale: new M.Spring(k, { duration: 0.3, bounce: 0.1 }),
       lift: new M.Spring(0, { duration: 0.26, bounce: 0 }),
       tilt: new M.Spring(0, { duration: 0.4, bounce: 0.2 }),
-      x: 0, y: 0
+      x: 0, y: 0,
+      o: gridOrigin() // board doesn't move during a drag: measure once
     };
     drag.scale.target = 1;
     drag.lift.target = touch ? pitch * 1.4 : 0;
-    // Start the ghost exactly over the tray piece, so nothing jumps.
-    drag.x = fromRect.left - (w / 2) * (1 - k);
-    drag.y = fromRect.top - h * (1 - k);
+
     try { trayEl.setPointerCapture && document.body.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     slotEl.classList.add('dragging');
     BBC.sfx.pick();
@@ -408,21 +407,19 @@
     var top = d.touch ? y - d.h - d.lift.x : y - d.h / 2;
     left = soften(left, -d.w * 0.25, vw - d.w * 0.75, vw * 0.5);
     top = soften(top, 0, vh - d.h * 0.5, vh * 0.5);
-    // Ease in from the tray position over the first frames of the lift.
-    var blend = Math.min(1, Math.max(0, 1 - Math.abs(d.scale.x - 1) * 1.6));
-    d.x = d.x + (left - d.x) * (0.45 + 0.55 * blend);
-    d.y = d.y + (top - d.y) * (0.45 + 0.55 * blend);
+    // 1:1 with the (predicted) finger from the very first frame.
+    d.x = left;
+    d.y = top;
     // A slight lean in the direction of travel.
     d.tilt.target = Math.max(-5, Math.min(5, (d.tracker.vx * d.speed) / 450));
     d.tilt.step(dt);
     paintGhost(d.ghost, d.x, d.y, d.scale.x, d.tilt.x);
 
-    var o = gridOrigin();
+    var o = d.o;
     var target = snapTarget(d.piece, (d.y - o.top) / d.pitch, (d.x - o.left) / d.pitch, d.target);
     if (!sameTarget(target, d.target)) {
       d.target = target;
       showPreview(target, d.piece);
-      if (target) vibrate(3);
     }
   }
 
@@ -460,6 +457,7 @@
     if (!drag || e.pointerId !== drag.id) return;
     e.preventDefault();
     drag.tracker.add(e);
+    dragFrame(0); // paint right away; the frame loop only advances the springs
   }
 
   function onUp(e) {
@@ -470,7 +468,7 @@
     var vx = d.tracker.vx * d.speed, vy = d.tracker.vy * d.speed;
 
     // Momentum: where was the flick heading? (Apple's projection, snappy rate, capped at 1 cell)
-    var o = gridOrigin();
+    var o = d.o;
     var cap = d.pitch;
     var px = Math.max(-cap, Math.min(cap, M.project(vx, 0.99)));
     var py = Math.max(-cap, Math.min(cap, M.project(vy, 0.99)));
@@ -497,7 +495,7 @@
 
   /** Spring the piece into its cell, carrying the finger's velocity, then place it. */
   function land(d, target, vx, vy) {
-    var o = gridOrigin();
+    var o = d.o;
     var tx = o.left + target.c * d.pitch;
     var ty = o.top + target.r * d.pitch;
     var opt = { duration: 0.24, bounce: 0.12 };
