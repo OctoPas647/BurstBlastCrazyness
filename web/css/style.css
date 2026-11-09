@@ -129,7 +129,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transform: scale(.7);
   transition: opacity .12s, transform .12s;
 }
-.combo.show { opacity: 1; transform: scale(1); }
+.combo.show { opacity: 1; transform: scale(1); transition: opacity .12s, transform var(--spring-bouncy-ms, 300ms) var(--spring-bouncy, ease-out); }
 
 /* ---------- board ---------- */
 
@@ -179,11 +179,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .cell.will-clear:not(.filled):not(.preview) { opacity: .5; }
 
-.cell.land { animation: land .14s ease-out; }
+.cell.land { animation: land var(--spring-snappy-ms, 200ms) var(--spring-snappy, ease-out); }
 @keyframes land {
-  0% { transform: scale(.82); }
-  60% { transform: scale(1.06); }
-  100% { transform: scale(1); }
+  from { transform: scale(.86); }
+  to { transform: scale(1); }
 }
 
 /* Bomb blocks (from the Bombs mod) */
@@ -216,27 +215,25 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .piece { position: relative; pointer-events: none; }
 .piece .cell { position: absolute; }
-.slot .tray-piece { transition: transform .08s, opacity .08s; }
-.slot.dragging .tray-piece { opacity: 0; transform: scale(.6); }
+.slot .tray-piece { transition: opacity .06s; }
+.slot.dragging .tray-piece { opacity: 0; }
 .slot.nofit .tray-piece { opacity: .35; filter: grayscale(.7); }
 .tray { overflow: visible; }
 .tray.deal .tray-piece {
-  animation: deal .3s cubic-bezier(.16,1.3,.42,1) both;
+  animation: deal var(--spring-bouncy-ms, 400ms) var(--spring-bouncy, cubic-bezier(.16,1.3,.42,1)) both;
   animation-delay: var(--deal-delay, 0ms);
 }
-.tray.deal .slot:nth-child(2) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 55ms); }
-.tray.deal .slot:nth-child(3) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 110ms); }
-.tray-piece.swap-in { animation: swapIn .32s cubic-bezier(.2,1.5,.4,1) both; }
+.tray.deal .slot:nth-child(2) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 45ms); }
+.tray.deal .slot:nth-child(3) .tray-piece { animation-delay: calc(var(--deal-delay, 0ms) + 90ms); }
+.tray-piece.swap-in { animation: swapIn var(--spring-bouncy-ms, 400ms) var(--spring-bouncy, ease-out) both; }
 @keyframes swapIn {
-  0% { transform: scale(.2) rotate(-20deg); opacity: 0; filter: brightness(2); }
-  60% { transform: scale(1.12); opacity: 1; }
-  100% { transform: none; filter: none; }
+  from { transform: scale(.3) rotate(-16deg); }
+  to { transform: none; }
 }
+/* Two keyframes only: the spring easing supplies the overshoot. */
 @keyframes deal {
-  0%   { transform: translateX(calc(100vw - 20%)) rotate(14deg) scale(.7); opacity: 0; }
-  20%  { opacity: 1; }
-  70%  { transform: translateX(-6px) rotate(-3deg) scale(1.06); }
-  100% { transform: none; opacity: 1; }
+  from { transform: translateX(calc(100vw - 20%)) rotate(12deg) scale(.75); }
+  to { transform: none; }
 }
 
 .ghost {
@@ -247,8 +244,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transform-origin: 50% 100%;
   filter: drop-shadow(0 8px 10px rgba(0,0,0,.35));
 }
-.ghost.lifted { transition: scale .09s ease-out; }
-.ghost.returning { transition: transform .12s ease-in, scale .12s ease-in; }
+.ghost { will-change: transform, scale; }
 
 .seed-chip {
   border: 0;
@@ -279,7 +275,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: praise .9s ease-out forwards;
+  animation: praise .9s ease-out forwards, praiseIn var(--spring-bouncy-ms, 400ms) var(--spring-bouncy, ease-out);
   white-space: nowrap;
 }
 .praise-main {
@@ -298,11 +294,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-shadow: 0 2px 0 rgba(0,0,0,.35);
 }
 @keyframes praise {
-  0% { opacity: 0; scale: .5; }
-  15% { opacity: 1; scale: 1.12; }
-  25% { scale: 1; }
-  75% { opacity: 1; }
-  100% { opacity: 0; scale: 1.05; margin-top: -24px; }
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  75% { opacity: 1; margin-top: 0; }
+  100% { opacity: 0; margin-top: -24px; }
+}
+@keyframes praiseIn {
+  from { scale: .45; }
+  to { scale: 1; }
 }
 
 #fx { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
@@ -377,7 +376,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: center;
   box-shadow: 0 20px 60px rgba(0,0,0,.5);
   transform: scale(.9);
-  transition: transform .15s;
+  transition: transform var(--spring-snappy-ms, 200ms) var(--spring-snappy, ease-out);
 }
 .over.show .over-card { transform: scale(1); }
 .over-card h2 { margin: 0 0 8px; font-size: 22px; }
@@ -486,7 +485,7 @@ body.paused #play { filter: blur(3px); transition: filter .15s; }
   width: min(100vw, 560px);
   max-height: 86vh;
   transform: translate(-50%, 100%);
-  transition: transform .2s cubic-bezier(.2,.9,.3,1);
+  transition: transform var(--spring-smooth-ms, 300ms) var(--spring-smooth, cubic-bezier(.2,.9,.3,1));
   background: var(--sheet);
   border-radius: 22px 22px 0 0;
   display: flex;

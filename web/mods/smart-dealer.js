@@ -96,7 +96,47 @@
       next.sort(function (a, b) { return b.rank - a.rank; });
       beam = next.slice(0, width);
     }
-    return beam[0] && beam[0].picks.length ? beam[0].picks : null;
+    if (!beam[0] || !beam[0].picks.length) return null;
+    // Prefer a plan that still works whatever order you place the pieces in.
+    for (var b2 = 0; b2 < beam.length; b2++) {
+      if (beam[b2].picks.length === (steps || g.handSize) && anyOrderWorks(start, R, C, beam[b2].picks, opts)) {
+        return beam[b2].picks;
+      }
+    }
+    return beam[0].picks;
+  }
+
+  /** Every placement order fits if each piece goes on its best spot at that moment. */
+  function anyOrderWorks(start, R, C, picks, opts) {
+    var orders = permutations(picks.length);
+    for (var o = 0; o < orders.length; o++) {
+      var b = start;
+      for (var i = 0; i < orders[o].length; i++) {
+        var sh = picks[orders[o][i]];
+        var best = null, bestV = -Infinity;
+        for (var r = 0; r <= R - sh.h; r++) {
+          for (var c = 0; c <= C - sh.w; c++) {
+            if (!fits(b, C, sh, r, c)) continue;
+            var res = place(b, R, C, sh, r, c);
+            var v = moveValue(res, sh, R, C, opts);
+            if (v > bestV) { bestV = v; best = res.b; }
+          }
+        }
+        if (!best) return false;
+        b = best;
+      }
+    }
+    return true;
+  }
+
+  function permutations(n) {
+    if (n <= 1) return [[0]];
+    var out = [];
+    (function rec(cur, used) {
+      if (cur.length === n) { out.push(cur.slice()); return; }
+      for (var i = 0; i < n; i++) if (!used[i]) { used[i] = true; cur.push(i); rec(cur, used); cur.pop(); used[i] = false; }
+    })([], {});
+    return out;
   }
 
   function fits(b, C, sh, r, c) {
@@ -181,7 +221,7 @@
     name: 'Smart Dealer',
     version: '1.0.0',
     author: 'BurstBlastCrazyness',
-    description: 'Looks at your board and deals the hand that helps most: big pieces that always fit, always at least one piece that clears a line, and plans for full-board clears. Turn it off for pure random dealing.',
+    description: 'Looks at your board and deals the hand that helps most: big pieces that fit in any order, always at least one piece that clears a line, and plans for full-board clears. Your hand never changes once dealt. Turn it off for pure random dealing.',
     type: 'gameplay',
     defaultEnabled: true,
     conflicts: ['gentle-dealer'],
@@ -190,7 +230,7 @@
         options: [{ value: 'normal', label: 'Normal' }, { value: 'high', label: 'High' }, { value: 'max', label: 'Max' }] },
       { key: 'chaos', label: 'Variety (0–100)', type: 'number', min: 0, max: 100, default: 25 },
       { key: 'winning', label: 'Always a line-clearing piece', type: 'boolean', default: true },
-      { key: 'rescue', label: 'Swap pieces when stuck', type: 'boolean', default: true }
+      { key: 'rescue', label: 'Swap pieces when stuck (changes your hand)', type: 'boolean', default: false }
     ],
     setup: function (api) {
       api.filter('dealHand', function (hand, ctx) {
@@ -215,24 +255,6 @@
           var t = out[i]; out[i] = out[j]; out[j] = t;
         }
         return out;
-      });
-
-      // After every move: if none of your remaining pieces can clear a line but
-      // some piece could, swap the least useful one for the best line-clearer.
-      api.on('moveDone', function (ctx) {
-        if (!api.setting('winning')) return;
-        var g = ctx.game;
-        var left = [];
-        g.hand.forEach(function (p, i) { if (p) left.push(i); });
-        if (!left.length) return; // a new hand is coming, it gets the same guarantee
-        if (left.some(function (i) { return canClear(g, g.hand[i]); })) return;
-        var cl = clearers(g, { big: api.setting('big') });
-        if (!cl.length) return;
-        var slot = left.reduce(function (a, b) {
-          return g.hand[b].cells.length < g.hand[a].cells.length ? b : a;
-        });
-        g.hand[slot] = g.makePiece(cl[0].shape);
-        g.hand[slot].swapped = true;
       });
 
       // Stuck with pieces left? Swap the leftovers for ones that fit.

@@ -206,7 +206,7 @@
           delete p.swapped;
         }
         if (!fits) s.classList.add('nofit');
-        if (drag && drag.slot === slot) s.classList.add('dragging');
+        if (slotHidden(slot)) s.classList.add('dragging');
         s.appendChild(wrap);
       }
       trayEl.appendChild(s);
@@ -279,6 +279,29 @@
   }
 
   /* ---------- drag & drop ---------- */
+  /*
+   * Feel, in short:
+   *  - The piece is drawn where your finger is GOING (predicted ~1–2 frames
+   *    ahead), so it doesn't trail behind on fast swipes.
+   *  - Lifting, landing and returning are springs (Apple's duration/bounce
+   *    model) that start from the piece's current speed: no seams, no jumps.
+   *  - On release, the flick's momentum is projected forward to pick the cell
+   *    you were heading for.
+   *  - Near screen edges the piece rubber-bands instead of leaving the screen.
+   */
+  var M = BBC.motion;
+  var LOOKAHEAD_MS = 26;
+  var landing = null;
+  var returning = [];
+  var loopOn = false;
+  var lastFrame = 0;
+
+  function slotHidden(slot) {
+    if (drag && drag.slot === slot) return true;
+    if (landing && landing.slot === slot) return true;
+    for (var i = 0; i < returning.length; i++) if (returning[i].slot === slot) return true;
+    return false;
+  }
 
   /**
    * Big pick-up zones: anywhere below the board counts. The touch is matched
@@ -292,12 +315,15 @@
     if (e.target.closest('button, a, input, select, textarea, .sheet, .over, #seed-chip')) return;
     var bb = boardEl.getBoundingClientRect();
     if (e.clientY < bb.bottom + 2) return;
+    finishLanding();
+    if (game.over) return;
     var tr = trayEl.getBoundingClientRect();
     var n = game.hand.length;
     var col = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - tr.left) / tr.width) * n)));
     var slot = -1, bestD = Infinity;
     for (var i = 0; i < n; i++) {
-      if (game.hand[i] && Math.abs(i - col) < bestD) { slot = i; bestD = Math.abs(i - col); }
+      var busy = returning.some(function (r) { return r.slot === i; });
+      if (game.hand[i] && !busy && Math.abs(i - col) < bestD) { slot = i; bestD = Math.abs(i - col); }
     }
     if (slot < 0) return;
     startDrag(e, slot);
@@ -306,7 +332,7 @@
   function startDrag(e, slot) {
     var slotEl = trayEl.querySelector('.slot[data-slot="' + slot + '"]');
     var p = game.hand[slot];
-    if (!p || !slotEl) return;
+    if (!p || !slotEl || !slotEl.querySelector('.piece')) return;
     e.preventDefault();
     var pitch = cellPitch();
     var cellSize = gridOrigin().width;
@@ -315,61 +341,113 @@
     ghost.classList.add('ghost');
     document.body.appendChild(ghost);
     var touch = e.pointerType !== 'mouse';
+    var fromRect = slotEl.querySelector('.piece').getBoundingClientRect();
+    var w = p.w * pitch - gap, h = p.h * pitch - gap;
+    var k = fromRect.width / w;
+    var tracker = new M.Tracker();
+    tracker.reset(e.clientX, e.clientY, e.timeStamp || performance.now());
+
     drag = {
-      slot: slot,
-      piece: p,
-      ghost: ghost,
-      id: e.pointerId,
-      w: p.w * pitch - gap,
-      h: p.h * pitch - gap,
-      lift: touch ? pitch * 1.4 : 0,
-      pitch: pitch,
-      sx: e.clientX,
-      sy: e.clientY,
+      slot: slot, piece: p, ghost: ghost, id: e.pointerId, pitch: pitch,
+      w: w, h: h, touch: touch,
+      sx: e.clientX, sy: e.clientY,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
-      target: null,
-      fromRect: slotEl.querySelector('.piece').getBoundingClientRect()
+      target: null, fromRect: fromRect, tracker: tracker,
+      // Grows from tray size and glides up above the finger.
+      scale: new M.Spring(k, { duration: 0.3, bounce: 0.1 }),
+      lift: new M.Spring(0, { duration: 0.26, bounce: 0 }),
+      tilt: new M.Spring(0, { duration: 0.4, bounce: 0.2 }),
+      x: 0, y: 0
     };
+    drag.scale.target = 1;
+    drag.lift.target = touch ? pitch * 1.4 : 0;
+    // Start the ghost exactly over the tray piece, so nothing jumps.
+    drag.x = fromRect.left - (w / 2) * (1 - k);
+    drag.y = fromRect.top - h * (1 - k);
+    try { trayEl.setPointerCapture && document.body.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     slotEl.classList.add('dragging');
     BBC.sfx.pick();
-    // Grow from tray size to board size as it lifts off.
-    var k = drag.fromRect.width / drag.w;
-    ghost.style.scale = k;
-    positionGhost(e.clientX, e.clientY);
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        ghost.classList.add('lifted');
-        ghost.style.scale = 1;
-      });
-    });
+    vibrate(6);
+    dragFrame(0);
+    startLoop();
   }
 
-  function positionGhost(x, y) {
-    // Drag speed: the piece travels further than your finger (touch only).
-    x = drag.sx + (x - drag.sx) * drag.speed;
-    y = drag.sy + (y - drag.sy) * drag.speed;
-    var left = x - drag.w / 2;
-    var top = drag.lift ? y - drag.h - drag.lift : y - drag.h / 2;
-    drag.ghost.style.transform = 'translate(' + left + 'px,' + top + 'px)';
+  function startLoop() {
+    if (loopOn) return;
+    loopOn = true;
+    lastFrame = performance.now();
+    requestAnimationFrame(tick);
+  }
+
+  function tick(now) {
+    var dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
+    lastFrame = now;
+    if (drag) dragFrame(dt);
+    if (landing) landingFrame(dt);
+    for (var i = returning.length - 1; i >= 0; i--) returnFrame(returning[i], dt, i);
+    if (drag || landing || returning.length) requestAnimationFrame(tick);
+    else loopOn = false;
+  }
+
+  /** Viewport clamp with iOS-style rubber-banding past the edges. */
+  function soften(v, min, max, dim) {
+    if (v < min) return min + M.rubberBand(v - min, dim);
+    if (v > max) return max + M.rubberBand(v - max, dim);
+    return v;
+  }
+
+  function dragFrame(dt) {
+    var d = drag;
+    var f = d.tracker.predict(LOOKAHEAD_MS, d.pitch * 0.8);
+    var x = d.sx + (f.x - d.sx) * d.speed;
+    var y = d.sy + (f.y - d.sy) * d.speed;
+    d.scale.step(dt);
+    d.lift.step(dt);
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var left = x - d.w / 2;
+    var top = d.touch ? y - d.h - d.lift.x : y - d.h / 2;
+    left = soften(left, -d.w * 0.25, vw - d.w * 0.75, vw * 0.5);
+    top = soften(top, 0, vh - d.h * 0.5, vh * 0.5);
+    // Ease in from the tray position over the first frames of the lift.
+    var blend = Math.min(1, Math.max(0, 1 - Math.abs(d.scale.x - 1) * 1.6));
+    d.x = d.x + (left - d.x) * (0.45 + 0.55 * blend);
+    d.y = d.y + (top - d.y) * (0.45 + 0.55 * blend);
+    // A slight lean in the direction of travel.
+    d.tilt.target = Math.max(-5, Math.min(5, (d.tracker.vx * d.speed) / 450));
+    d.tilt.step(dt);
+    paintGhost(d.ghost, d.x, d.y, d.scale.x, d.tilt.x);
+
     var o = gridOrigin();
-    var target = snapTarget((top - o.top) / drag.pitch, (left - o.left) / drag.pitch);
-    if (!sameTarget(target, drag.target)) {
-      drag.target = target;
-      showPreview(target);
+    var target = snapTarget(d.piece, (d.y - o.top) / d.pitch, (d.x - o.left) / d.pitch, d.target);
+    if (!sameTarget(target, d.target)) {
+      d.target = target;
+      showPreview(target, d.piece);
+      if (target) vibrate(3);
     }
   }
 
-  /** Nearest spot the piece fits, within ~0.8 of a cell, so quick drops still land. */
-  function snapTarget(fr, fc) {
+  function paintGhost(g, x, y, s, rot) {
+    g.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0) rotate(' + (rot || 0).toFixed(2) + 'deg)';
+    g.style.scale = s.toFixed(4);
+  }
+
+  /**
+   * Nearest spot the piece fits within ~0.8 cell. Sticky: the current spot is
+   * kept unless another one is clearly closer, so the preview doesn't flicker.
+   */
+  function snapTarget(piece, fr, fc, current) {
     var r0 = Math.round(fr), c0 = Math.round(fc);
-    if (game.canPlace(drag.piece, r0, c0)) return { r: r0, c: c0 };
     var best = null, bestD = 0.8 * 0.8;
     for (var dr = -1; dr <= 1; dr++) {
       for (var dc = -1; dc <= 1; dc++) {
         var r = r0 + dr, c = c0 + dc;
         var d = (r - fr) * (r - fr) + (c - fc) * (c - fc);
-        if (d < bestD && game.canPlace(drag.piece, r, c)) { best = { r: r, c: c }; bestD = d; }
+        if (d < bestD && game.canPlace(piece, r, c)) { best = { r: r, c: c }; bestD = d; }
       }
+    }
+    if (current && best && !sameTarget(current, best)) {
+      var cd = (current.r - fr) * (current.r - fr) + (current.c - fc) * (current.c - fc);
+      if (cd < 0.75 * 0.75 && Math.sqrt(cd) - Math.sqrt(bestD) < 0.14) return current;
     }
     return best;
   }
@@ -381,42 +459,120 @@
   function onMove(e) {
     if (!drag || e.pointerId !== drag.id) return;
     e.preventDefault();
-    positionGhost(e.clientX, e.clientY);
+    drag.tracker.add(e);
   }
 
   function onUp(e) {
     if (!drag || e.pointerId !== drag.id) return;
     var d = drag;
-    if (d.target) {
-      d.ghost.remove();
-      drag = null;
-      doPlace(d.slot, d.target.r, d.target.c);
+    d.tracker.add(e);
+    drag = null;
+    var vx = d.tracker.vx * d.speed, vy = d.tracker.vy * d.speed;
+
+    // Momentum: where was the flick heading? (Apple's projection, snappy rate, capped at 1 cell)
+    var o = gridOrigin();
+    var cap = d.pitch;
+    var px = Math.max(-cap, Math.min(cap, M.project(vx, 0.99)));
+    var py = Math.max(-cap, Math.min(cap, M.project(vy, 0.99)));
+    var aimed = snapTarget(d.piece, (d.y + py - o.top) / d.pitch, (d.x + px - o.left) / d.pitch, null);
+    var target = d.target && aimed && !sameTarget(aimed, d.target)
+      ? (Math.abs(px) + Math.abs(py) > d.pitch * 0.35 ? aimed : d.target)
+      : d.target || aimed;
+
+    if (target) {
+      if (!sameTarget(target, d.target)) showPreview(target, d.piece);
+      land(d, target, vx, vy);
     } else {
-      cancelDrag();
+      sendBack(d, vx, vy);
     }
   }
 
   function onCancel(e) {
-    if (drag && e.pointerId === drag.id) cancelDrag();
+    if (drag && e.pointerId === drag.id) {
+      var d = drag;
+      drag = null;
+      sendBack(d, 0, 0);
+    }
   }
 
-  function cancelDrag() {
-    var d = drag;
-    drag = null;
+  /** Spring the piece into its cell, carrying the finger's velocity, then place it. */
+  function land(d, target, vx, vy) {
+    var o = gridOrigin();
+    var tx = o.left + target.c * d.pitch;
+    var ty = o.top + target.r * d.pitch;
+    var opt = { duration: 0.24, bounce: 0.12 };
+    var sx = new M.Spring(d.x, opt), sy = new M.Spring(d.y, opt);
+    sx.v = vx; sy.v = vy;
+    sx.target = tx; sy.target = ty;
+    d.scale.set({ duration: 0.24, bounce: 0 });
+    d.scale.target = 1;
+    d.tilt.target = 0;
+    landing = { d: d, slot: d.slot, target: target, sx: sx, sy: sy, t: 0 };
+    startLoop();
+  }
+
+  function landingFrame(dt) {
+    var L = landing;
+    L.t += dt;
+    var x = L.sx.step(dt), y = L.sy.step(dt);
+    L.d.scale.step(dt);
+    L.d.tilt.step(dt);
+    paintGhost(L.d.ghost, x, y, L.d.scale.x, L.d.tilt.x);
+    var close = Math.abs(x - L.sx.target) < 1.2 && Math.abs(y - L.sy.target) < 1.2;
+    if ((close && L.t > 0.06) || L.t > 0.3) finishLanding();
+  }
+
+  /** Commit the landing now (also called if you grab another piece mid-landing). */
+  function finishLanding() {
+    if (!landing) return;
+    var L = landing;
+    landing = null;
+    L.d.ghost.remove();
+    showPreview(null);
+    doPlace(L.slot, L.target.r, L.target.c);
+  }
+
+  /** No valid spot: the piece springs back into the tray, keeping its momentum. */
+  function sendBack(d, vx, vy) {
     showPreview(null);
     var to = d.fromRect;
     var k = to.width / d.w;
-    d.ghost.classList.add('returning');
-    d.ghost.style.scale = k;
-    d.ghost.style.transform = 'translate(' + (to.left - (d.w / 2) * (1 - k)) + 'px,' + (to.top - d.h * (1 - k)) + 'px)';
-    setTimeout(function () {
-      d.ghost.remove();
-      renderTray();
-    }, 120);
+    var opt = { duration: 0.36, bounce: 0.16 };
+    var sx = new M.Spring(d.x, opt), sy = new M.Spring(d.y, opt);
+    sx.v = vx; sy.v = vy;
+    sx.target = to.left - (d.w / 2) * (1 - k);
+    sy.target = to.top - d.h * (1 - k);
+    d.scale.set(opt);
+    d.scale.target = k;
+    d.tilt.target = 0;
+    returning.push({ d: d, slot: d.slot, sx: sx, sy: sy, t: 0 });
     BBC.sfx.drop();
+    startLoop();
   }
 
-  function showPreview(target) {
+  function returnFrame(R, dt, i) {
+    R.t += dt;
+    var x = R.sx.step(dt), y = R.sy.step(dt);
+    R.d.scale.step(dt);
+    R.d.tilt.step(dt);
+    paintGhost(R.d.ghost, x, y, R.d.scale.x, R.d.tilt.x);
+    if ((R.sx.settled(0.6) && R.sy.settled(0.6)) || R.t > 0.8) {
+      R.d.ghost.remove();
+      returning.splice(i, 1);
+      renderTray();
+    }
+  }
+
+  function cancelDrag() {
+    if (drag) {
+      var d = drag;
+      drag = null;
+      sendBack(d, 0, 0);
+    }
+    finishLanding();
+  }
+
+  function showPreview(target, piece) {
     preview.cells.forEach(function (i) {
       cellEls[i].classList.remove('preview');
       if (!game.board[i]) cellEls[i].style.setProperty('--c', 'transparent');
@@ -425,8 +581,8 @@
       cellEls[i].classList.remove('will-clear');
     });
     preview = { cells: [], lines: [] };
-    if (!target || !drag) return;
-    var p = drag.piece;
+    if (!target || !piece) return;
+    var p = piece;
     var color = 'var(--p' + p.color + ')';
     p.cells.forEach(function (rc) {
       var i = game.idx(target.r + rc[0], target.c + rc[1]);
@@ -637,7 +793,7 @@
 
   UI.pause = function () {
     if (!game || game.over) return;
-    if (drag) cancelDrag();
+    cancelDrag();
     $('#pause-score').textContent = game.score.toLocaleString();
     $('#pause-best').textContent = Math.max(BBC.getBest(BBC.bestKey(game)), game.score).toLocaleString();
     var r = $('#pause-restart');
