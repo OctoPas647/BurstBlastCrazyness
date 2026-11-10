@@ -85,7 +85,7 @@ android/             WebView wrapper that packs /web into an APK
 1. **APK**: nothing to do. The `Build APK` workflow runs on every push to `main`.
 2. **Web version**: go to *Settings → Pages → Build and deployment → Source* and pick **GitHub Actions**, then re-run the `Deploy web version` workflow.
 
-No secrets are needed. The APK is signed with a key that's committed in `android/app/bbc-debug.keystore`. That's fine for installing the APK yourself. For the Play Store you'd want a private key kept in GitHub Secrets.
+**Signing:** add these repository secrets (Settings → Secrets and variables → Actions) to sign with your private key: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. If they're missing, the build falls back to the shared key in `android/app/bbc-debug.keystore`.
 
 ## Building the APK yourself
 
