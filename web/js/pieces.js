@@ -1,8 +1,10 @@
 /* BurstBlastCrazyness — piece shapes.
  * Shapes are written as ASCII art: '#' = block, '.' = empty.
- * The base set: lines, squares, rectangles, small and big corners, L/J,
- * T and S/Z, plus a bigger family (long L/J, P/Q, big T, U, plus, 2×4,
- * big S/Z). All rotations are counted as separate shapes.
+ * classic() is the Block Blast set and nothing else: single block, lines of
+ * 2 to 5, 2×2 and 3×3 squares, 2×3 rectangle, small corner, L/J, T, S/Z and
+ * the big 3×3 corner. All rotations are counted as separate shapes.
+ * extended() holds the bigger shapes Block Blast doesn't have; they are only
+ * in play when the "More Shapes" mod is on.
  */
 (function (BBC) {
   'use strict';
@@ -80,7 +82,12 @@
     s = s.concat(rotations('S4', ['.##', '##.']));
     s = s.concat(rotations('Z4', ['##.', '.##']));
     s = s.concat(rotations('corner5', ['###', '#..', '#..']));
-    // Bigger family (pentominoes and friends)
+    return s;
+  }
+
+  /** Bigger shapes that are not in Block Blast (used by the "More Shapes" mod). */
+  function extended() {
+    var s = [];
     s = s.concat(rotations('L5', ['#.', '#.', '#.', '##']));
     s = s.concat(rotations('J5', ['.#', '.#', '.#', '##']));
     s = s.concat(rotations('P5', ['##', '##', '#.']));
@@ -99,6 +106,7 @@
     rotate: rotate,
     rotations: rotations,
     classic: classic,
+    extended: extended,
     key: key
   };
 })((window.BBC = window.BBC || {}));

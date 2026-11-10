@@ -8,6 +8,7 @@ BBC.MOD_FILES = [
   'mods/crazyness.js',
   'mods/biomes.js',
   'mods/big-board.js',
+  'mods/more-shapes.js',
   'mods/crazy-shapes.js',
   'mods/bombs.js',
   'mods/perfect-clear.js',

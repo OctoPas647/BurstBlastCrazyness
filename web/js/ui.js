@@ -361,7 +361,7 @@
    *    a spring that starts at the finger's speed.
    *  - A piece on its way back to the tray can be caught again mid-air.
    */
-  var LOOKAHEAD_MS = 10;   // draw the piece where the finger will be when the frame shows
+  var LOOKAHEAD_MS = 12;   // draw the piece where the finger will be when the frame shows
   var drag = null;
   var flights = [];        // pieces flying into the board (move already made)
   var returns = [];        // pieces flying back to the tray
@@ -450,11 +450,11 @@
     // The piece's bottom-centre is tied to the finger; "off" is what is left of
     // the distance to its starting spot, and it springs to zero.
     var ax = e.clientX, ay = touch ? e.clientY : e.clientY + h / 2;
-    var offX = new M.Spring(bx - ax, { duration: 0.15, bounce: 0 });
-    var offY = new M.Spring(by - ay, { duration: 0.15, bounce: 0 });
+    var offX = new M.Spring(bx - ax, { duration: 0.11, bounce: 0 });
+    var offY = new M.Spring(by - ay, { duration: 0.11, bounce: 0 });
     offX.v = vx; offY.v = vy;
     offX.target = 0; offY.target = 0;
-    var scale = new M.Spring(scale0, { duration: 0.24, bounce: 0.1 });
+    var scale = new M.Spring(scale0, { duration: 0.17, bounce: 0.06 });
     scale.v = scaleV;
     scale.target = 1;
 
@@ -464,7 +464,7 @@
       sx: e.clientX, sy: e.clientY,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
       tracker: tracker, offX: offX, offY: offY, scale: scale,
-      lift: new M.Spring(0, { duration: 0.22, bounce: 0 }),
+      lift: new M.Spring(0, { duration: 0.15, bounce: 0 }),
       tilt: new M.Spring(0, { duration: 0.35, bounce: 0.15 }),
       bx: bx, by: by, target: null, shadow: null, glows: []
     };
@@ -561,7 +561,7 @@
     }
     if (current && best && !sameTarget(current, best) && game.canPlace(piece, current.r, current.c)) {
       var cd = (current.r - fr) * (current.r - fr) + (current.c - fc) * (current.c - fc);
-      if (cd < 0.75 * 0.75 && Math.sqrt(cd) - Math.sqrt(bestD) < 0.14) return current;
+      if (cd < 0.78 * 0.78 && Math.sqrt(cd) - Math.sqrt(bestD) < 0.22) return current;
     }
     return best;
   }
@@ -586,6 +586,7 @@
     hidePreview(d);
     var v = d.tracker.velocityAt(now);
     var vx = clamp(v.x * d.speed, -2500, 2500), vy = clamp(v.y * d.speed, -2500, 2500);
+    d.tvx = vx; d.tvy = vy;
     // What you saw is what you get: land on the previewed cell or go back.
     if (d.target && game.canPlace(d.piece, d.target.r, d.target.c) && game.hand[d.slot] === d.piece) {
       land(d, d.target, vx, vy);
@@ -687,16 +688,18 @@
       return;
     }
     syncTray(false); // this slot empties; the others update their "fits" state
-    var opt = { duration: 0.18, bounce: 0.1 };
+    // Stiff and without bounce: the piece is driven straight into its cells.
+    // Only a little of the finger's speed is carried, so it can't swing past.
+    var opt = { duration: 0.11, bounce: 0 };
     var bx = new M.Spring(d.bx, opt), by = new M.Spring(d.by, opt);
-    bx.v = vx; by.v = vy;
+    bx.v = clamp(vx, -900, 900); by.v = clamp(vy, -900, 900);
     bx.target = geo.left + target.c * d.pitch + d.w / 2;
     by.target = geo.top + target.r * d.pitch + d.h;
     flights.push({
       game: g, res: res, ghost: d.ghost, w: d.w, h: d.h,
       bx: bx, by: by,
-      scale: d.scale.to(1, { duration: 0.18, bounce: 0 }),
-      tilt: d.tilt.to(0, { duration: 0.18, bounce: 0 }),
+      scale: d.scale.to(1, { duration: 0.1, bounce: 0 }),
+      tilt: d.tilt.to(0, { duration: 0.1, bounce: 0 }),
       t: 0, done: false
     });
     BBC.saveSoon();
@@ -713,7 +716,7 @@
     paintGhost(F.ghost, x, y, F.w, F.h, F.scale.x, F.tilt.x);
     var near = Math.abs(x - F.bx.target) < 0.75 && Math.abs(y - F.by.target) < 0.75;
     var slow = Math.abs(F.bx.v) < 90 && Math.abs(F.by.v) < 90;
-    if ((near && slow) || F.t > 0.24) F.done = true;
+    if ((near && slow) || F.t > 0.15) F.done = true;
   }
 
   /** The piece has arrived: draw the move's result on the board. */
@@ -734,13 +737,16 @@
     if (quiet || reduceMotion) {
       F.ghost.remove();
     } else {
-      // Impact: the ghost turns into a white flash exactly on its cells and fades.
+      // Impact: the ghost turns into a white flash exactly on its cells and
+      // fades, the blocks are stamped in (pressed, then flat) and the board
+      // takes the hit with a short dip. Firm, no wobble.
       paintGhost(F.ghost, F.bx.target, F.by.target, F.w, F.h, 1, 0);
       F.ghost.classList.add('flash');
-      fade(F.ghost, [{ opacity: 0.55 }, { opacity: 0 }], 170);
+      fade(F.ghost, [{ opacity: 0.8 }, { opacity: 0 }], 130);
+      stamp(res, g);
     }
     if (!quiet) {
-      vibrate(res.lines ? [12, 30, 18] : 10);
+      vibrate(res.lines ? [16, 26, 22] : 14);
       if (res.cleared.length) {
         burst(res);
         BBC.sfx.clear(res.lines, res.combo);
@@ -759,6 +765,20 @@
       if (g.dealPending) scheduleDeal(g);
       else if (g.over) endGame();
     }
+  }
+
+  var STAMP = [{ transform: 'scale(0.9)' }, { transform: 'scale(1)' }];
+  var THUD = [{ transform: 'translateY(0)' }, { transform: 'translateY(2.5px)', offset: 0.3 }, { transform: 'translateY(0)' }];
+
+  function stamp(res, g) {
+    try {
+      var opt = { duration: 110, easing: 'cubic-bezier(.2, .9, .2, 1)' };
+      for (var k = 0; k < res.cells.length; k++) {
+        var i = g.idx(res.cells[k][0], res.cells[k][1]);
+        if (g.board[i] || shown[i]) cellEls[i].animate(STAMP, opt);
+      }
+      boardEl.animate(THUD, { duration: 120, easing: 'ease-out' });
+    } catch (e) { /* older WebView: no stamp */ }
   }
 
   /** Land everything that is still in the air, right now. */
@@ -1247,10 +1267,10 @@
       : 'Every piece is drawn on its own, at random, from the list of shapes below. ' +
         'The dealer never looks at your board, your score, your combo or how long you have been playing.';
     if (crazyMode()) {
-      p.textContent = 'Crazyness mode: every hand is grown from the free space on your board. ' +
-        'A crazy block is one connected shape (blocks may touch diagonally) that is not in the shape list below and does not look like one. ' +
-        'Each hand is planned two steps ahead so it always fits, and the blocks are made as big as the size cap allows while the hand stays playable. ' +
-        'A regular shape only appears when no crazy block is possible. Change the cap under Mods → Crazyness.';
+      p.textContent = 'Crazyness mode: every hand mixes the regular shapes below with crazy blocks grown from the free space on your board (1 or 2 per hand, sometimes all 3). ' +
+        'A crazy block is one connected shape (blocks may touch diagonally) that is not in the shape list and does not look like one. ' +
+        'Each hand is planned two steps ahead so it always fits, and the crazy blocks are made as big as the size cap allows while the hand stays playable. ' +
+        'Change the mix and the cap under Mods → Crazyness.';
     }
     body.appendChild(p);
     body.appendChild(el('p', 'muted', 'No ads, no revives to buy, no difficulty that ramps up behind your back.'));
@@ -1322,7 +1342,7 @@
     var ds = el('label', 'field');
     ds.appendChild(el('span', null, 'Drag speed (touch)'));
     var sel = el('select');
-    [['1', '1× (follows finger)'], ['1.25', '1.25×'], ['1.5', '1.5×'], ['1.75', '1.75×'], ['2', '2×']].forEach(function (o) {
+    [['1', '1× (follows finger)'], ['1.25', '1.25×'], ['1.35', '1.35×'], ['1.5', '1.5×'], ['1.75', '1.75×'], ['2', '2×']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       if (+o[0] === +BBC.settings.dragSpeed) opt.selected = true;

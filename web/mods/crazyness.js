@@ -1,8 +1,10 @@
-/* Crazyness — the second game mode.
+/* Crazyness — the second game mode: Classic and crazy blocks in one hand.
  *
- * Every new hand tries to be three "crazy blocks": shapes that exist nowhere
- * in the shape list. They are grown on the spot from the free space on your
- * board, as big as the size cap allows.
+ * Every hand mixes the regular (Block Blast) shapes with "crazy blocks":
+ * shapes that exist nowhere in the shape list. By default a hand holds 1 or 2
+ * crazy blocks, now and then 3; the other slots are regular shapes picked to
+ * fit the same plan. Crazy blocks are grown on the spot from the free space
+ * on your board, as big as the size cap allows.
  *
  * Rules of a crazy block
  *  1. Its little blocks all touch each other: side by side, above/below or
@@ -327,12 +329,16 @@
     return out;
   }
 
-  /** Best regular shape for a board (used when no crazy block is possible). */
-  function bestRegular(g, b, R, C, rng) {
-    var best = null;
+  /**
+   * Regular shapes for one board, best first: each shape at its best spot.
+   * `skip` holds shape ids already in the hand (no doubles).
+   */
+  function regulars(g, b, R, C, rng, skip) {
+    var out = [];
     for (var s = 0; s < g.catalog.length; s++) {
       var sh = g.catalog[s];
-      if ((sh.kind || 'normal') !== 'normal') continue;
+      if ((sh.kind || 'normal') !== 'normal' || (skip && skip[sh.id])) continue;
+      var best = null;
       for (var r = 0; r <= R - sh.h; r++) {
         for (var c = 0; c <= C - sh.w; c++) {
           var ok = true, idxs = [];
@@ -343,50 +349,64 @@
           }
           if (!ok) continue;
           var res = drop(b, R, C, idxs);
-          var v = moveScore(res, idxs.length, R, C) + rng.next() * 6;
+          var v = moveScore(res, idxs.length, R, C);
           if (!best || v > best.score) best = { shape: sh, res: res, score: v };
         }
       }
+      // The noise is what gives the regular slots their variety.
+      if (best) { best.rank = best.score + rng.next() * 90; out.push(best); }
     }
-    return best;
+    out.sort(function (a, c2) { return c2.rank - a.rank; });
+    return out;
   }
 
-  /** Plan one hand with a fixed size cap: the best few plans, best first. */
-  function planAt(g, start, rng, cap, steps) {
-    var R = g.rows, C = g.cols;
+  /**
+   * Plan one hand with a fixed size cap: the best few plans, best first.
+   * kinds[i] says what slot i should be: true = crazy block, false = regular shape.
+   */
+  function planAt(g, start, rng, cap, kinds) {
+    var R = g.rows, C = g.cols, steps = kinds.length;
     var refs = regularRefs(g);
-    var beam = [{ b: start, picks: [], score: 0, mine: [] }];
+    var beam = [{ b: start, picks: [], score: 0, mine: [], used: {} }];
 
     for (var step = 0; step < steps; step++) {
       var next = [];
       for (var s = 0; s < beam.length; s++) {
         var st = beam[s];
-        var cands = candidates(st.b, R, C, cap, rng);
-        var taken = 0;
-        for (var i = 0; i < cands.length && taken < BRANCH; i++) {
-          var shape = toShape(cands[i].idxs, C);
-          // Rule 4: unlike every regular shape, and unlike the hand's other crazy blocks.
-          if (looksLike(shape, refs) || looksLike(shape, st.mine)) continue;
-          shape.id = 'crazy';
-          shape.kind = 'normal';
-          shape.crazy = true;
-          next.push({
-            b: cands[i].res.b,
-            picks: st.picks.concat([shape]),
-            score: st.score + cands[i].score,
-            mine: st.mine.concat(variants(shape.cells))
-          });
-          taken++;
+        var taken = 0, i;
+        if (kinds[step]) {
+          var cands = candidates(st.b, R, C, cap, rng);
+          for (i = 0; i < cands.length && taken < BRANCH; i++) {
+            var shape = toShape(cands[i].idxs, C);
+            // Rule 4: unlike every regular shape, and unlike the hand's other crazy blocks.
+            if (looksLike(shape, refs) || looksLike(shape, st.mine)) continue;
+            shape.id = 'crazy';
+            shape.kind = 'normal';
+            shape.crazy = true;
+            next.push({
+              b: cands[i].res.b,
+              picks: st.picks.concat([shape]),
+              score: st.score + cands[i].score,
+              mine: st.mine.concat(variants(shape.cells)),
+              used: st.used
+            });
+            taken++;
+          }
         }
         if (!taken) {
-          // No crazy block possible here: fall back to the best regular shape.
-          var reg = bestRegular(g, st.b, R, C, rng);
-          if (reg) {
+          // A regular slot, or a crazy slot where no crazy block is possible.
+          var regs = regulars(g, st.b, R, C, rng, st.used);
+          if (!regs.length) regs = regulars(g, st.b, R, C, rng, null);
+          for (i = 0; i < regs.length && i < BRANCH; i++) {
+            var used = {};
+            for (var k in st.used) used[k] = true;
+            used[regs[i].shape.id] = true;
             next.push({
-              b: reg.res.b,
-              picks: st.picks.concat([reg.shape]),
-              score: st.score + reg.score - 600, // crazy hands always win over this
-              mine: st.mine
+              b: regs[i].res.b,
+              picks: st.picks.concat([regs[i].shape]),
+              score: st.score + regs[i].score - (kinds[step] ? 600 : 0), // a missed crazy slot always loses
+              mine: st.mine,
+              used: used
             });
           }
         }
@@ -485,14 +505,15 @@
   // Share of hurried playouts a hand has to survive, per "Hand safety" setting.
   var SAFETY = { big: 0.55, safe: 0.8, max: 0 };
 
-  function plan(g, rng, cap, steps, safety) {
+  function plan(g, rng, cap, kinds, safety) {
+    var steps = kinds.length;
     var R = g.rows, C = g.cols;
     cap = Math.max(1, Math.min(Math.round(cap), R * C - 1));
     var start = boardBits(g);
     var need = SAFETY[safety] == null ? SAFETY.big : SAFETY[safety];
     if (need <= 0) {
       // "Always the biggest": no playability check beyond the planned order.
-      var top = planAt(g, start, rng, cap, steps);
+      var top = planAt(g, start, rng, cap, kinds);
       return top.length ? top[0].picks : null;
     }
     // Start two notches above the size that worked for the last hand: quick,
@@ -503,7 +524,7 @@
       var c = Math.max(2, Math.round(cap * SIZES[s]));
       if (c === lastCap) continue;
       lastCap = c;
-      var plans = planAt(g, start, rng, c, steps);
+      var plans = planAt(g, start, rng, c, kinds);
       if (!plans.length) return null;
       // Of the plans at this size, take the one that is hardest to get stuck on.
       var pick = null, pickRate = -1;
@@ -532,26 +553,54 @@
     name: 'Crazyness',
     version: '1.0.0',
     author: 'BurstBlastCrazyness',
-    description: 'Game mode. Hands are made of crazy blocks: one-of-a-kind shapes grown from the free space on your board, as big as the cap allows, planned two steps ahead so the hand always fits. A regular shape only shows up when no crazy block is possible.',
+    description: 'Game mode. Every hand mixes the regular shapes with crazy blocks: one-of-a-kind shapes grown from the free space on your board, as big as the cap allows. Hands are planned two steps ahead so they always fit.',
     type: 'gameplay',
     conflicts: ['gentle-dealer'],
     settings: [
       { key: 'cap', label: 'Biggest crazy block (blocks)', type: 'number', min: 4, max: 255, default: 20 },
+      { key: 'mix', label: 'Crazy blocks per hand', type: 'select', default: 'mix',
+        options: [
+          { value: 'mix', label: 'Mixed (1 or 2, sometimes 3)' },
+          { value: '1', label: '1' },
+          { value: '2', label: '2' },
+          { value: '3', label: 'All of them' }
+        ] },
       { key: 'safety', label: 'Block size vs. safety', type: 'select', default: 'big',
         options: [
           { value: 'big', label: 'Big (default)' },
           { value: 'safe', label: 'Forgiving (smaller blocks, harder to get stuck)' },
           { value: 'max', label: 'Always the biggest (often fits in one order only)' }
         ] },
-      { key: 'regrow', label: 'Re-grow blocks when none fits (no game over)', type: 'boolean', default: false }
+      { key: 'regrow', label: 'Re-deal blocks when none fits (no game over)', type: 'boolean', default: false }
     ],
     setup: function (api) {
       function cap() { return +api.setting('cap') || 20; }
 
+      /** Which of the n slots are crazy blocks (true) and which regular shapes (false). */
+      function kindsFor(n, rng) {
+        var mix = api.setting('mix');
+        var crazy;
+        if (mix === 'mix' || mix == null) {
+          var roll = rng.next();
+          crazy = roll < 0.45 ? 1 : roll < 0.9 ? 2 : 3;
+        } else {
+          crazy = +mix || 1;
+        }
+        crazy = Math.max(0, Math.min(n, crazy));
+        var kinds = [];
+        for (var i = 0; i < n; i++) kinds.push(i < crazy);
+        for (i = n - 1; i > 0; i--) {
+          var j = rng.int(i + 1), t = kinds[i];
+          kinds[i] = kinds[j];
+          kinds[j] = t;
+        }
+        return kinds;
+      }
+
       // Runs before the other dealers and marks the hand as final.
       api.filter('dealHand', function (hand, ctx) {
         var g = ctx.game;
-        var picks = plan(g, ctx.rng, cap(), g.handSize, api.setting('safety'));
+        var picks = plan(g, ctx.rng, cap(), kindsFor(g.handSize, ctx.rng), api.setting('safety'));
         if (!picks) return hand; // board is full: normal deal, game over follows
         var out = picks.map(function (sh) { return g.makePiece(sh); });
         while (out.length < g.handSize) out.push(ctx.draw());
@@ -563,19 +612,19 @@
         return out;
       }, 1);
 
-      // Optional: stuck with blocks left? Grow new ones for the board as it is now.
+      // Optional: stuck with blocks left? Deal new ones for the board as it is now.
       api.filter('isGameOver', function (stuck, ctx) {
         if (!stuck || !api.setting('regrow')) return stuck;
         var g = ctx.game;
         var slots = [];
         g.hand.forEach(function (p, i) { if (p) slots.push(i); });
         if (!slots.length) return stuck;
-        var picks = plan(g, g.rng, cap(), slots.length, api.setting('safety'));
+        var picks = plan(g, g.rng, cap(), kindsFor(slots.length, g.rng), api.setting('safety'));
         if (!picks) return true;
         slots.forEach(function (slot, i) {
           g.hand[slot] = picks[i] ? g.makePiece(picks[i]) : null;
         });
-        api.ui.banner('Re-grown!');
+        api.ui.banner('New blocks!');
         return false;
       }, 4);
     }

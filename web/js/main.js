@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.9.0';
+  BBC.VERSION = '1.10.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
@@ -15,7 +15,14 @@
     try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* ignore */ }
   }
 
-  BBC.settings = Object.assign({ sound: true, haptics: true, dragSpeed: 1.25 }, read(SETTINGS_KEY) || {});
+  BBC.settings = Object.assign({ sound: true, haptics: true, dragSpeed: 1.35 }, read(SETTINGS_KEY) || {});
+  // 1.10: the default drag speed went from 1.25 to 1.35. Move saved settings
+  // along once; whatever you pick afterwards stays.
+  if (!BBC.settings.speedV2) {
+    if (+BBC.settings.dragSpeed === 1.25) BBC.settings.dragSpeed = 1.35;
+    BBC.settings.speedV2 = true;
+    write(SETTINGS_KEY, BBC.settings);
+  }
   BBC.saveSettings = function () { write(SETTINGS_KEY, BBC.settings); };
 
   /* ---------- best scores (one per ruleset, so modded games don't mix with classic) ---------- */
