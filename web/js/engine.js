@@ -41,6 +41,7 @@
     this.lines = 0;
     this.handsDealt = 0;
     this.over = false;
+    this.dealPending = false;
     this.uid = 0;
   }
 
@@ -70,7 +71,7 @@
   };
 
   G.makePiece = function (shape) {
-    return {
+    var p = {
       uid: ++this.uid,
       id: shape.id,
       cells: shape.cells,
@@ -79,6 +80,8 @@
       kind: shape.kind || 'normal',
       color: this.rng.int(COLORS)
     };
+    if (shape.crazy) p.crazy = true;
+    return p;
   };
 
   G.weights = function () {
@@ -100,6 +103,7 @@
       draw: function () { return self.drawPiece(); }
     });
     this.hand = hand;
+    this.dealPending = false;
     this.handsDealt++;
     BBC.mods.emit('handDealt', { game: this, hand: hand });
   };
@@ -139,7 +143,12 @@
     return this.fullLines(extra);
   };
 
-  G.place = function (slot, r, c) {
+  /**
+   * opts.deferDeal: when the hand runs empty, don't deal inside this call.
+   * The result gets newHand = 'pending' and the caller runs dealNow() a moment
+   * later, so the (possibly slow) dealer never blocks the frame you placed on.
+   */
+  G.place = function (slot, r, c, opts) {
     var piece = this.hand[slot];
     if (this.over || !piece || !this.canPlace(piece, r, c)) return null;
     var self = this;
@@ -219,11 +228,24 @@
     BBC.mods.emit('moveDone', { game: this, result: result });
 
     if (this.hand.every(function (p) { return !p; })) {
+      if (opts && opts.deferDeal) {
+        this.dealPending = true;
+        result.newHand = 'pending';
+        return result;
+      }
       this.dealHand();
       result.newHand = true;
     }
     this.checkOver();
     return result;
+  };
+
+  /** Deal the hand that place() left pending. Returns true if it dealt. */
+  G.dealNow = function () {
+    if (!this.dealPending || this.over) return false;
+    this.dealHand();
+    this.checkOver();
+    return true;
   };
 
   G.checkOver = function () {
@@ -267,6 +289,11 @@
     for (var i = 0; i < keys.length; i++) if (s[keys[i]] !== undefined) this[keys[i]] = s[keys[i]];
     this.rng.state = s.rngState >>> 0;
     BBC.mods.emit('gameRestored', { game: this });
+    // Saved between the last piece of a hand and the next deal: deal now.
+    if (!this.over && this.hand.every(function (p) { return !p; })) {
+      this.dealHand();
+      this.checkOver();
+    }
   };
 
   BBC.Game = Game;

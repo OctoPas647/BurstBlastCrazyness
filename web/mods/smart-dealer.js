@@ -189,26 +189,40 @@
     return true;
   }
 
+  // Scratch flags for the rows / columns a piece touches (boards are at most 16 wide).
+  var rowHit = new Uint8Array(32), colHit = new Uint8Array(32);
+
   function place(src, R, C, sh, r, c, into) {
     var b = into || new Uint8Array(src.length);
     b.set(src);
-    for (var i = 0; i < sh.cells.length; i++) b[(r + sh.cells[i][0]) * C + c + sh.cells[i][1]] = 1;
-    var rows = [], cols = [], x, y, full;
-    for (y = 0; y < R; y++) {
-      full = true;
-      for (x = 0; x < C && full; x++) full = b[y * C + x] === 1;
-      if (full) rows.push(y);
+    var cells = sh.cells, n = cells.length, i, x, y, full, lines = 0;
+    for (i = 0; i < n; i++) b[(r + cells[i][0]) * C + c + cells[i][1]] = 1;
+    // Only lines the piece touches can have become full.
+    for (i = 0; i < n; i++) {
+      y = r + cells[i][0];
+      if (rowHit[y] === 0) {
+        full = true;
+        for (x = 0; x < C && full; x++) full = b[y * C + x] !== 0;
+        rowHit[y] = full ? 2 : 1;
+      }
+      x = c + cells[i][1];
+      if (colHit[x] === 0) {
+        full = true;
+        for (y = 0; y < R && full; y++) full = b[y * C + x] !== 0;
+        colHit[x] = full ? 2 : 1;
+      }
     }
-    for (x = 0; x < C; x++) {
-      full = true;
-      for (y = 0; y < R && full; y++) full = b[y * C + x] === 1;
-      if (full) cols.push(x);
+    for (y = r; y < r + sh.h; y++) {
+      if (rowHit[y] === 2) { lines++; for (x = 0; x < C; x++) b[y * C + x] = 0; }
     }
-    rows.forEach(function (yy) { for (var xx = 0; xx < C; xx++) b[yy * C + xx] = 0; });
-    cols.forEach(function (xx) { for (var yy = 0; yy < R; yy++) b[yy * C + xx] = 0; });
+    for (x = c; x < c + sh.w; x++) {
+      if (colHit[x] === 2) { lines++; for (y = 0; y < R; y++) b[y * C + x] = 0; }
+    }
+    for (y = r; y < r + sh.h; y++) rowHit[y] = 0;
+    for (x = c; x < c + sh.w; x++) colHit[x] = 0;
     var filled = 0;
-    for (var i2 = 0; i2 < b.length; i2++) filled += b[i2];
-    return { b: b, lines: rows.length + cols.length, filled: filled };
+    for (i = 0; i < b.length; i++) filled += b[i];
+    return { b: b, lines: lines, filled: filled };
   }
 
   function moveValue(res, sh, R, C, opts) {
@@ -285,6 +299,7 @@
       }
 
       api.filter('dealHand', function (hand, ctx) {
+        if (ctx.final) return hand; // another dealer (Crazyness) already built this hand
         var g = ctx.game;
         var opts = { big: api.setting('big'), chaos: api.setting('chaos') * 4 };
         opts.recent = recent;

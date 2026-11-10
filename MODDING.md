@@ -68,7 +68,7 @@ If a mod throws an error, the game catches it, shows a toast and keeps going.
 | `config` | `{ rows, cols, handSize }` | – | Board size, pieces per hand (1–5) |
 | `pieceCatalog` | array of shapes | – | Add or remove shapes |
 | `pieceWeights` | array of numbers (one per catalog shape, all `1` by default) | `game` | Change odds |
-| `dealHand` | array of pieces | `game`, `rng`, `draw()` | Replace how a hand is dealt (`draw()` = one fair random piece) |
+| `dealHand` | array of pieces | `game`, `rng`, `draw()`, `final` | Replace how a hand is dealt (`draw()` = one fair random piece). Set `ctx.final = true` when your hand must not be changed by later dealers; check it before replacing a hand |
 | `placementScore` | number (blocks placed) | see *move ctx* | Points for placing |
 | `clearScore` | number | see *move ctx* | Points for clearing |
 | `isGameOver` | boolean (`true` = stuck) | `game` | Change the lose rule (return `false` to keep playing) |
@@ -133,3 +133,11 @@ BBC.mods.register({
 ## Keeping it fair
 
 A mod that makes dealing look at the board (like *Gentle Dealer*) is allowed, but the **Fair play** tab names every active `dealHand` mod so players always know. Please don't publish mods that deal against the player.
+
+## Shapes made at run time
+
+A hand doesn't have to come from the shape list. `game.makePiece({ id, cells, w, h, kind })` turns any shape into a piece: `cells` is a list of `[row, col]` pairs measured from the shape's top-left corner, `w` and `h` its width and height. That is how the Crazyness mode deals its crazy blocks (`web/mods/crazyness.js`); its pieces also carry `crazy: true`.
+
+## Timing
+
+The game makes a move the moment the player lets go, and draws it afterwards. When the hand runs empty, the next one is dealt one frame after the last piece has landed, so a `dealHand` filter may take a few milliseconds without causing a stutter. Keep it well under 50 ms on a phone.

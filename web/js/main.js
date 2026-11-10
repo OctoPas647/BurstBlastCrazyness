@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.8.0';
+  BBC.VERSION = '1.9.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
@@ -23,24 +23,57 @@
   BBC.bestKey = function (game) {
     return game.ruleset.length ? game.ruleset.join('|') : 'classic';
   };
+  // Kept in memory: the HUD asks for the best score after every move.
+  var bestAll = null;
+  function bests() {
+    if (!bestAll) bestAll = read(BEST_KEY) || {};
+    return bestAll;
+  }
   BBC.getBest = function (key) {
-    var all = read(BEST_KEY) || {};
-    return all[key] || 0;
+    return bests()[key] || 0;
   };
   BBC.updateBest = function (game) {
-    var all = read(BEST_KEY) || {};
+    var all = bests();
     var key = BBC.bestKey(game);
     if (game.score > (all[key] || 0)) {
       all[key] = game.score;
       write(BEST_KEY, all);
     }
   };
-  BBC.resetBest = function () { write(BEST_KEY, {}); };
+  BBC.resetBest = function () {
+    bestAll = {};
+    write(BEST_KEY, bestAll);
+  };
+
+  /* ---------- game mode ---------- */
+
+  /** 'classic' or 'crazyness' (a mode is a built-in gameplay mod with its own switch). */
+  BBC.getMode = function () {
+    return BBC.mods.isEnabled('crazyness') ? 'crazyness' : 'classic';
+  };
+  BBC.setMode = function (mode) {
+    BBC.mods.setEnabled('crazyness', mode === 'crazyness');
+  };
 
   /* ---------- save / resume ---------- */
 
   BBC.saveGame = function () {
-    if (BBC.game) write(SAVE_KEY, BBC.game.toJSON());
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    if (!BBC.game) return;
+    write(SAVE_KEY, BBC.game.toJSON());
+    BBC.updateBest(BBC.game);
+  };
+
+  /**
+   * Save shortly after the last move instead of on every move: writing to
+   * storage blocks the screen for a moment, and at speed that adds up.
+   * Leaving the app always saves at once (see below).
+   */
+  var saveTimer = null;
+  BBC.saveSoon = function () {
+    if (saveTimer) return;
+    saveTimer = setTimeout(BBC.saveGame, 400);
   };
 
   /* ---------- game lifecycle ---------- */
@@ -112,6 +145,7 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) BBC.saveGame();
   });
+  window.addEventListener('pagehide', function () { BBC.saveGame(); });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', BBC.boot);
   else BBC.boot();

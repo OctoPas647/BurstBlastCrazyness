@@ -15,6 +15,37 @@ An 8×8 block puzzle with no ads and no revives to buy. By default the **Smart D
 | Browser | https://octopas647.github.io/burstblastcrazyness/ (after Pages is switched on, see below) |
 | Locally | `cd web && python3 -m http.server` then open http://localhost:8000 |
 
+## Game modes
+
+Pick the mode in the pause menu or on the game-over card. Each mode keeps its own best score.
+
+- **Classic**: the regular shapes, dealt by the Smart Dealer (or purely at random if you switch it off).
+- **Crazyness**: hands are made of **crazy blocks**, shapes that are grown on the spot from the free space on your board.
+
+### Crazy blocks
+
+1. All little blocks of a crazy block touch each other, side by side or diagonally. No loose parts.
+2. Size is 1 up to (board − 1) blocks. The *Biggest crazy block* setting caps it (default 20, so one block can't wipe the board on every move).
+3. A hand is planned two steps ahead: block 1 is grown on the current board, block 2 on the board after block 1 has landed and cleared its lines, block 3 after block 2. So a hand always fits, at least in that order.
+4. A crazy block never looks like a regular shape, or like another crazy block in the same hand. "Looks like" means the two overlap by 70% or more in some position, rotation or mirror image.
+5. The dealer always goes for three crazy blocks, as big as it can make them. A regular shape only appears when no crazy block is possible for that slot.
+
+"As big as it can" has one safeguard. Three maximum-size blocks usually fit in one exact order only: in tests, a simulated player lasted about 10 moves that way. So each hand is test-played in other orders and spots, and if it is too easy to get stuck the blocks are grown a size smaller. With the default settings the typical block is about 15 blocks big and the same simulated player lasts about 80 moves. Under Mods → Crazyness you can change the cap, pick *Forgiving* or *Always the biggest*, or switch on *Re-grow blocks when none fits* (no game over).
+
+## How it moves
+
+The animation layer follows Apple's fluid-interface rules (from the WWDC talks "Designing Fluid Interfaces" and "Animate with springs"):
+
+- **Answer on touch-down.** A piece leaves the tray on the frame you touch it.
+- **Start from where it is.** The dragged piece starts exactly on the tray piece and glides to your finger; nothing jumps.
+- **Everything can be interrupted.** A piece flying back to the tray can be caught mid-air. A piece that is still arriving can be grabbed.
+- **Springs, with bounce only after a throw.** Landing and returning are springs that start at your finger's speed. Menus settle without bounce.
+- **The game never waits for an animation.** A move counts the moment you let go. The flight into the cell, the line pops and the score are drawn afterwards, and several can run at once.
+- **What the preview shows is where it lands.** A move can't be taken back, so a flick never picks a different cell than the one highlighted.
+- **Less motion on request.** With the system's "reduce motion" setting on, pieces appear instead of flying.
+
+For speed: the next hand is worked out one frame after the last piece lands (not in the middle of the landing), effects only animate transform and opacity so they keep running while the dealer thinks, the tray and board only redraw what changed, and the game is saved shortly after a move instead of during it.
+
 ## Smart Dealer (on by default)
 
 On every new hand it runs a beam search over the board:
@@ -50,6 +81,7 @@ The scoring follows the formula documented for the genre:
 | Mod | Type | What it does |
 | --- | --- | --- |
 | Smart Dealer | gameplay | On by default. Deals the most helpful hand, big pieces, swaps when stuck |
+| Crazyness | gameplay | The Crazyness game mode: hands of procedurally grown crazy blocks |
 | Big Board | gameplay | Board size 5–14 (default 10×10) |
 | Crazy Shapes | gameplay | Adds plus, U, ring, zig-zag and diagonal pieces |
 | Bombs | gameplay | Rare bomb block that destroys its 3×3 area |
@@ -72,6 +104,7 @@ web/                 the whole game (plain HTML/CSS/JS, no build step)
   js/pieces.js       shape list (ASCII art → cells)
   js/mods.js         mod system: filters, events, settings, custom mods
   js/engine.js       rules, scoring, dealing, save/restore (no DOM)
+  js/motion.js       springs, finger tracking
   js/ui.js           board, drag & drop, menus, effects
   js/sfx.js          synthesized sounds
   js/main.js         boot, new game, best scores

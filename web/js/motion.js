@@ -1,5 +1,13 @@
 /* BurstBlastCrazyness — motion engine.
  *
+ * The rules this game's motion follows (from Apple's "Designing Fluid
+ * Interfaces" and "Animate with springs" talks):
+ *   1. Respond on touch-down, never wait for an animation.
+ *   2. Everything that moves can be grabbed and redirected mid-flight.
+ *   3. Motion starts from where the thing is on screen, at the speed it has.
+ *   4. Bounce only when a throw put momentum in; menus settle without it.
+ *   5. Game state never waits for motion: the move counts on release.
+ *
  * Springs use Apple's (iOS 17 / SwiftUI) "duration + bounce" model:
  *   mass = 1
  *   stiffness = (2π / duration)²
@@ -51,6 +59,12 @@
     this.x = this.target = value;
     this.v = 0;
   };
+  /** Retarget (and optionally retune) without losing the current speed. */
+  Spring.prototype.to = function (target, opts) {
+    if (opts) this.set(opts);
+    this.target = target;
+    return this;
+  };
 
   /** Where a flick ends up (Apple's exponential deceleration). v in px/s. */
   function project(v, rate) {
@@ -91,10 +105,13 @@
 
   /**
    * Finger tracker: keeps the last ~100 ms of touch samples (including the
-   * extra samples the browser coalesces between frames), estimates velocity
-   * with a least-squares fit, and predicts where the finger will be a frame
-   * or two from now. Prefers the browser's own predicted points when it has
-   * them (Chrome / Android WebView), and falls back to velocity extrapolation.
+   * extra samples the browser coalesces between frames) and estimates the
+   * finger's velocity with a least-squares fit.
+   *
+   * The velocity is only trusted while the finger is actually moving: a
+   * finger that stopped sends no more events, so velocityAt() fades the last
+   * known speed to zero within 60 ms. (Before, a fast drag followed by a pause
+   * kept its old speed, which threw the piece off on release.)
    */
   function Tracker() {
     this.samples = [];
@@ -102,14 +119,14 @@
     this.vy = 0;
     this.px = 0;
     this.py = 0;
-    this.native = null;
+    this.t = 0;
   }
   Tracker.prototype.reset = function (x, y, t) {
     this.samples = [{ x: x, y: y, t: t }];
     this.vx = this.vy = 0;
     this.px = x;
     this.py = y;
-    this.native = null;
+    this.t = t;
   };
   Tracker.prototype.add = function (e) {
     var list = [];
@@ -122,18 +139,12 @@
       if (last && t <= last.t) t = last.t + 0.5;
       this.samples.push({ x: ev.clientX, y: ev.clientY, t: t });
     }
-    var now = this.samples[this.samples.length - 1].t;
-    while (this.samples.length > 3 && now - this.samples[0].t > 100) this.samples.shift();
+    // The event itself is the newest truth, even if its coalesced list lags behind.
+    var end = this.samples[this.samples.length - 1];
+    end.x = e.clientX;
+    end.y = e.clientY;
+    while (this.samples.length > 3 && end.t - this.samples[0].t > 100) this.samples.shift();
     this.fit();
-
-    this.native = null;
-    try {
-      var pred = e.getPredictedEvents ? e.getPredictedEvents() : null;
-      if (pred && pred.length) {
-        var p = pred[pred.length - 1];
-        this.native = { x: p.clientX, y: p.clientY };
-      }
-    } catch (err2) { this.native = null; }
   };
   Tracker.prototype.fit = function () {
     // Weighted least squares over the last 60 ms (recent samples count more).
@@ -141,35 +152,41 @@
     var last = s[n - 1];
     this.px = last.x;
     this.py = last.y;
-    if (n < 2) { this.vx = this.vy = 0; return; }
-    var sw = 0, st = 0, sx = 0, sy = 0, stt = 0, stx = 0, sty = 0;
+    this.t = last.t;
+    var sw = 0, st = 0, sx = 0, sy = 0, stt = 0, stx = 0, sty = 0, used = 0;
     for (var i = 0; i < n; i++) {
       var dt = (s[i].t - last.t) / 1000;
       if (dt < -0.06) continue;
       var w = 1 + (dt + 0.06) * 20;
+      used++;
       sw += w; st += w * dt; sx += w * s[i].x; sy += w * s[i].y;
       stt += w * dt * dt; stx += w * dt * s[i].x; sty += w * dt * s[i].y;
     }
     var den = sw * stt - st * st;
-    if (Math.abs(den) < 1e-9) return;
+    if (used < 2 || Math.abs(den) < 1e-9) {
+      // Nothing recent to compare with: the finger was resting.
+      this.vx = this.vy = 0;
+      return;
+    }
     var vx = (sw * stx - st * sx) / den;
     var vy = (sw * sty - st * sy) / den;
     // Light smoothing so one noisy sample can't jerk the piece.
     this.vx = this.vx * 0.3 + vx * 0.7;
     this.vy = this.vy * 0.3 + vy * 0.7;
   };
-  /** Predicted finger position `ms` milliseconds ahead (capped). */
-  Tracker.prototype.predict = function (ms, maxPx) {
-    var dx, dy;
-    if (this.native) {
-      dx = this.native.x - this.px;
-      dy = this.native.y - this.py;
-    } else {
-      dx = (this.vx * ms) / 1000;
-      dy = (this.vy * ms) / 1000;
-    }
+  /** Velocity in px/s right now; fades to zero when no sample arrived for 20–60 ms. */
+  Tracker.prototype.velocityAt = function (now) {
+    var age = now - this.t;
+    var k = age <= 20 ? 1 : age >= 60 ? 0 : 1 - (age - 20) / 40;
+    return { x: this.vx * k, y: this.vy * k };
+  };
+  /** Finger position `ms` milliseconds ahead of the last sample (capped at maxPx). */
+  Tracker.prototype.predict = function (ms, maxPx, now) {
+    var v = this.velocityAt(now);
+    var dx = (v.x * ms) / 1000;
+    var dy = (v.y * ms) / 1000;
     var d = Math.sqrt(dx * dx + dy * dy);
-    if (d > maxPx) { dx *= maxPx / d; dy *= maxPx / d; }
+    if (d > maxPx && d > 0) { dx *= maxPx / d; dy *= maxPx / d; }
     return { x: this.px + dx, y: this.py + dy };
   };
 
@@ -184,15 +201,17 @@
 
   // CSS spring easings, generated once at startup.
   var presets = {
-    smooth: [0.4, 0],      // menus, fades
-    snappy: [0.32, 0.12],  // landing, small pops
-    bouncy: [0.5, 0.3],    // new pieces flying in, praise
-    swift: [0.25, 0.08]    // quick UI feedback
+    smooth: [0.4, 0],      // menus, sheets: no bounce, nothing was thrown
+    snappy: [0.28, 0.12],  // new pieces arriving, cards
+    bouncy: [0.45, 0.28],  // praise text
+    swift: [0.22, 0.05]    // quick UI feedback
   };
+  BBC.motion.easings = {};
   var root = document.documentElement;
   Object.keys(presets).forEach(function (name) {
     var e = cssEasing(presets[name][0], presets[name][1]);
     root.style.setProperty('--spring-' + name, e.easing);
     root.style.setProperty('--spring-' + name + '-ms', e.ms + 'ms');
+    BBC.motion.easings[name] = e;
   });
 })((window.BBC = window.BBC || {}));
