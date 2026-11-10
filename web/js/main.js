@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.10.0';
+  BBC.VERSION = '1.11.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
@@ -15,12 +15,18 @@
     try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* ignore */ }
   }
 
-  BBC.settings = Object.assign({ sound: true, haptics: true, dragSpeed: 1.35 }, read(SETTINGS_KEY) || {});
+  BBC.settings = Object.assign({ sound: true, haptics: true, dragSpeed: 1.6 }, read(SETTINGS_KEY) || {});
   // 1.10: the default drag speed went from 1.25 to 1.35. Move saved settings
   // along once; whatever you pick afterwards stays.
   if (!BBC.settings.speedV2) {
     if (+BBC.settings.dragSpeed === 1.25) BBC.settings.dragSpeed = 1.35;
     BBC.settings.speedV2 = true;
+    write(SETTINGS_KEY, BBC.settings);
+  }
+  // 1.11: default 1.6. Again only the old defaults move.
+  if (!BBC.settings.speedV3) {
+    if (+BBC.settings.dragSpeed === 1.25 || +BBC.settings.dragSpeed === 1.35) BBC.settings.dragSpeed = 1.6;
+    BBC.settings.speedV3 = true;
     write(SETTINGS_KEY, BBC.settings);
   }
   BBC.saveSettings = function () { write(SETTINGS_KEY, BBC.settings); };

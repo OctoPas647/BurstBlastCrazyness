@@ -361,7 +361,7 @@
    *    a spring that starts at the finger's speed.
    *  - A piece on its way back to the tray can be caught again mid-air.
    */
-  var LOOKAHEAD_MS = 12;   // draw the piece where the finger will be when the frame shows
+  var LOOKAHEAD_MS = 16;   // draw the piece where the finger will be when the frame shows
   var drag = null;
   var flights = [];        // pieces flying into the board (move already made)
   var returns = [];        // pieces flying back to the tray
@@ -450,11 +450,11 @@
     // The piece's bottom-centre is tied to the finger; "off" is what is left of
     // the distance to its starting spot, and it springs to zero.
     var ax = e.clientX, ay = touch ? e.clientY : e.clientY + h / 2;
-    var offX = new M.Spring(bx - ax, { duration: 0.11, bounce: 0 });
-    var offY = new M.Spring(by - ay, { duration: 0.11, bounce: 0 });
+    var offX = new M.Spring(bx - ax, { duration: 0.08, bounce: 0 });
+    var offY = new M.Spring(by - ay, { duration: 0.08, bounce: 0 });
     offX.v = vx; offY.v = vy;
     offX.target = 0; offY.target = 0;
-    var scale = new M.Spring(scale0, { duration: 0.17, bounce: 0.06 });
+    var scale = new M.Spring(scale0, { duration: 0.13, bounce: 0.05 });
     scale.v = scaleV;
     scale.target = 1;
 
@@ -464,7 +464,7 @@
       sx: e.clientX, sy: e.clientY,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
       tracker: tracker, offX: offX, offY: offY, scale: scale,
-      lift: new M.Spring(0, { duration: 0.15, bounce: 0 }),
+      lift: new M.Spring(0, { duration: 0.11, bounce: 0 }),
       tilt: new M.Spring(0, { duration: 0.35, bounce: 0.15 }),
       bx: bx, by: by, target: null, shadow: null, glows: []
     };
@@ -509,7 +509,7 @@
 
   function dragFrame(dt, now) {
     var d = drag;
-    var f = d.tracker.predict(LOOKAHEAD_MS, d.pitch * 0.3, now);
+    var f = d.tracker.predict(LOOKAHEAD_MS, d.pitch * 0.45, now);
     var x = d.sx + (f.x - d.sx) * d.speed;
     var y = d.sy + (f.y - d.sy) * d.speed;
     d.scale.step(dt);
@@ -1342,7 +1342,7 @@
     var ds = el('label', 'field');
     ds.appendChild(el('span', null, 'Drag speed (touch)'));
     var sel = el('select');
-    [['1', '1× (follows finger)'], ['1.25', '1.25×'], ['1.35', '1.35×'], ['1.5', '1.5×'], ['1.75', '1.75×'], ['2', '2×']].forEach(function (o) {
+    [['1', '1× (follows finger)'], ['1.25', '1.25×'], ['1.35', '1.35×'], ['1.5', '1.5×'], ['1.6', '1.6×'], ['1.75', '1.75×'], ['2', '2×'], ['2.25', '2.25×'], ['2.5', '2.5×']].forEach(function (o) {
       var opt = el('option', null, o[1]);
       opt.value = o[0];
       if (+o[0] === +BBC.settings.dragSpeed) opt.selected = true;

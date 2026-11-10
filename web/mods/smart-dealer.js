@@ -84,7 +84,8 @@
             for (var c = 0; c <= C - sh.w; c++) {
               if (!fits(st.b, C, sh, r, c)) continue;
               var res = place(st.b, R, C, sh, r, c, scratch);
-              var v = st.score + moveValue(res, sh, R, C, opts);
+              // Every piece should have a job: clear a line or fit snugly against the board.
+              var v = st.score + moveValue(res, sh, R, C, opts) + snug(st.b, R, C, sh, r, c) * 70 - (res.lines ? 0 : 110);
               if (!best || v > best.score) best = { b: res.b.slice(), picks: st.picks.concat([sh]), score: v };
             }
           }
@@ -225,6 +226,29 @@
     return { b: b, lines: lines, filled: filled };
   }
 
+  /** Share of a placement's outer edges that touch a wall or an existing block (0..1). */
+  function snug(b, R, C, sh, r, c) {
+    var cells = sh.cells, n = cells.length, edges = 0, touch = 0;
+    var w = sh.w, h = sh.h;
+    if (!sh._grid) {
+      var g = new Uint8Array(w * h);
+      for (var k = 0; k < n; k++) g[cells[k][0] * w + cells[k][1]] = 1;
+      Object.defineProperty(sh, '_grid', { value: g, enumerable: false });
+    }
+    var grid = sh._grid;
+    for (var i = 0; i < n; i++) {
+      var pr = cells[i][0], pc = cells[i][1];
+      for (var d = 0; d < 4; d++) {
+        var qr = pr + (d === 0 ? -1 : d === 1 ? 1 : 0), qc = pc + (d === 2 ? -1 : d === 3 ? 1 : 0);
+        if (qr >= 0 && qc >= 0 && qr < h && qc < w && grid[qr * w + qc]) continue;
+        edges++;
+        var rr = r + qr, cc = c + qc;
+        if (rr < 0 || cc < 0 || rr >= R || cc >= C || b[rr * C + cc]) touch++;
+      }
+    }
+    return edges ? touch / edges : 0;
+  }
+
   function moveValue(res, sh, R, C, opts) {
     var w = SIZE[opts.big] || SIZE.high;
     var cells = sh.cells.length;
@@ -301,7 +325,7 @@
       api.filter('dealHand', function (hand, ctx) {
         if (ctx.final) return hand; // another dealer (Crazyness) already built this hand
         var g = ctx.game;
-        var opts = { big: api.setting('big'), chaos: api.setting('chaos') * 4 };
+        var opts = { big: api.setting('big'), chaos: api.setting('chaos') * 2 };
         opts.recent = recent;
         var picks = plan(g, ctx.rng, opts);
         if (!picks) return hand; // nothing fits at all → normal deal (game over)

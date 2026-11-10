@@ -111,11 +111,39 @@
     return v;
   }
 
-  function moveScore(res, size, R, C) {
+  /**
+   * How snugly a set of cells sits on the board: the share of its outer edges
+   * that touch a wall or an existing block (0 = floating in open space,
+   * 1 = fills a pocket exactly).
+   */
+  function snug(b, R, C, idxs) {
+    var mine = {}, i;
+    for (i = 0; i < idxs.length; i++) mine[idxs[i]] = true;
+    var edges = 0, touch = 0;
+    for (i = 0; i < idxs.length; i++) {
+      var r = (idxs[i] / C) | 0, c = idxs[i] % C;
+      for (var k = 0; k < 4; k++) {
+        var rr = r + (k === 0 ? -1 : k === 1 ? 1 : 0), cc = c + (k === 2 ? -1 : k === 3 ? 1 : 0);
+        var out = rr < 0 || cc < 0 || rr >= R || cc >= C;
+        if (!out && mine[rr * C + cc]) continue;
+        edges++;
+        if (out || b[rr * C + cc]) touch++;
+      }
+    }
+    return edges ? touch / edges : 0;
+  }
+
+  /**
+   * What a block is worth. Every block should have a job: finish lines first,
+   * and sit snugly against what is already there instead of floating.
+   */
+  function moveScore(res, size, R, C, fit) {
     var L = res.lines;
     var v = size * 16;
-    if (L) v += L * 110 + (L - 1) * L * 40;
+    if (L) v += L * 150 + (L - 1) * L * 45;
+    else v -= 260; // a block that clears nothing has to earn its place
     if (L && res.filled === 0) v += 250;
+    v += (fit || 0) * 120;
     return v + quality(res.b, R, C);
   }
 
@@ -170,9 +198,16 @@
         if (r < R - 1 && c > 0 && inSet[i + C - 1]) diag++;
         if (r < R - 1 && c < C - 1 && inSet[i + C + 1]) diag++;
         var w;
-        if (style === 'lines') w = line * 6 + side * 0.35 + rng.next() * 0.7;
-        else if (style === 'wild') w = line * 2.5 + (side === 0 ? 1.6 : 0) + diag * 0.3 + rng.next() * 2.4;
-        else w = line * 1.5 + side * 0.9 + diag * 0.3 + rng.next() * 1.2;
+        // Cells next to existing blocks or walls come first: the block grows
+        // along what is already on the board instead of out into the open.
+        var hug = 0;
+        if (r === 0 || b[i - C]) hug++;
+        if (r === R - 1 || b[i + C]) hug++;
+        if (c === 0 || b[i - 1]) hug++;
+        if (c === C - 1 || b[i + 1]) hug++;
+        if (style === 'lines') w = line * 7 + hug * 0.45 + side * 0.35 + rng.next() * 0.5;
+        else if (style === 'wild') w = line * 4 + hug * 0.5 + (side === 0 ? 1.2 : 0) + diag * 0.3 + rng.next() * 1.4;
+        else w = line * 3 + hug * 0.7 + side * 0.9 + diag * 0.3 + rng.next() * 0.8;
         if (w > bestW) { bestW = w; best = i; bestAt = k; }
       }
       if (best < 0) break;
@@ -306,22 +341,34 @@
     for (i = 1; i < reg.sizes.length; i++) if (reg.sizes[i] > reg.sizes[biggest]) biggest = i;
     var inBiggest = free.filter(function (x) { return reg.id[x] === biggest; });
 
+    // Free cells in the lines that are closest to full: the best places to start a block.
+    var rowNeed = new Int16Array(R), colNeed = new Int16Array(C);
+    for (i = 0; i < free.length; i++) { rowNeed[(free[i] / C) | 0]++; colNeed[free[i] % C]++; }
+    function urgency(x) { return 1 / rowNeed[(x / C) | 0] + 1 / colNeed[x % C]; }
+
     var out = [], seen = {};
     for (var t = 0; t < TRIES; t++) {
       // Most tries start in the biggest free region, so the block can be as big as possible.
       var pool = t % 5 === 4 ? free : inBiggest;
       var seed = pool[rng.int(pool.length)];
+      // Two in three starts go where a line is nearly done (best of 4 random cells).
+      if (t % 3 !== 2) {
+        for (var q = 0; q < 3; q++) {
+          var alt = pool[rng.int(pool.length)];
+          if (urgency(alt) > urgency(seed)) seed = alt;
+        }
+      }
       var room = Math.min(cap, reg.sizes[reg.id[seed]]);
       // "As big as it can": two thirds of the tries go for the full size.
       var target = t % 3 === 2 ? Math.max(1, Math.round(room * (0.6 + rng.next() * 0.4))) : room;
-      var style = t % 3 === 0 ? 'lines' : t % 3 === 1 ? 'wild' : (t % 2 ? 'lines' : 'blob');
+      var style = t % 3 === 0 ? 'lines' : t % 3 === 1 ? (t % 2 ? 'lines' : 'wild') : (t % 2 ? 'lines' : 'blob');
       var idxs = grow(b, R, C, seed, target, rng, style);
       idxs.sort(function (a, c2) { return a - c2; });
       var k = idxs.join(',');
       if (seen[k]) continue;
       seen[k] = true;
       var res = drop(b, R, C, idxs);
-      var score = moveScore(res, idxs.length, R, C) + rng.next() * 6;
+      var score = moveScore(res, idxs.length, R, C, snug(b, R, C, idxs)) + rng.next() * 6;
       if (isSolidRect(idxs, C)) score -= 80; // a plain rectangle is not very crazy
       out.push({ idxs: idxs, res: res, score: score });
     }
@@ -349,12 +396,12 @@
           }
           if (!ok) continue;
           var res = drop(b, R, C, idxs);
-          var v = moveScore(res, idxs.length, R, C);
+          var v = moveScore(res, idxs.length, R, C, snug(b, R, C, idxs));
           if (!best || v > best.score) best = { shape: sh, res: res, score: v };
         }
       }
-      // The noise is what gives the regular slots their variety.
-      if (best) { best.rank = best.score + rng.next() * 90; out.push(best); }
+      // A little noise for variety, small enough that the shape with a real job wins.
+      if (best) { best.rank = best.score + rng.next() * 30; out.push(best); }
     }
     out.sort(function (a, c2) { return c2.rank - a.rank; });
     return out;
