@@ -72,16 +72,10 @@
     $('#btn-menu').addEventListener('click', function () { UI.pause(); });
     $('#pause-resume').addEventListener('click', function () { UI.resume(); });
     $('#pause').addEventListener('click', function (e) { if (e.target.id === 'pause') UI.resume(); });
+    // One tap restarts (it's already behind the pause menu).
     $('#pause-restart').addEventListener('click', function () {
-      var b = $('#pause-restart');
-      if (b.dataset.armed) {
-        UI.resume();
-        BBC.newGame();
-      } else {
-        b.dataset.armed = '1';
-        b.textContent = 'Tap again to restart';
-        b.classList.add('warn');
-      }
+      UI.resume();
+      BBC.newGame();
     });
     document.querySelectorAll('[data-mode]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -303,8 +297,26 @@
     }
   }
 
+  var MILESTONE = 10000;   // big celebration at 10k, 20k, 30k, ...
+  var hudGame = null, hudScore = 0;
+
   function renderHud() {
     animateScore(game.score);
+    var scoreEl = $('#score');
+    var tier = Math.floor(game.score / MILESTONE);
+    var tierAttr = String(Math.min(tier, 8));
+    if (scoreEl.dataset.tier !== tierAttr) scoreEl.dataset.tier = tierAttr;
+    if (hudGame !== game) {
+      // New or loaded game: just take its score, no fanfare for old points.
+      hudGame = game;
+      hudScore = game.score;
+    } else if (game.score > hudScore) {
+      if (tier > Math.floor(hudScore / MILESTONE)) milestone(tier * MILESTONE);
+      else scoreBump(scoreEl);
+      hudScore = game.score;
+    } else {
+      hudScore = game.score;
+    }
     var best = Math.max(BBC.getBest(BBC.bestKey(game)), game.score);
     setText('#best', best.toLocaleString());
     var combo = $('#combo');
@@ -321,10 +333,101 @@
     $('#mods-badge').style.display = modCount ? '' : 'none';
   }
 
+  /** Every point gained: the score gives a small, quick punch. */
+  function scoreBump(scoreEl) {
+    if (reduceMotion) return;
+    try {
+      scoreEl.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.1)', offset: 0.35 }, { transform: 'scale(1)' }],
+        { duration: 180, easing: 'ease-out' });
+    } catch (e) { /* older WebView */ }
+  }
+
+  /**
+   * Crossing 10k, 20k, 30k...: the score blows up and glows gold, a shockwave
+   * ring and a ring of sparks burst out of it, a big "10,000!" banner drops
+   * onto the board, the screen flashes, and it rings a fanfare.
+   */
+  function milestone(value) {
+    var scoreEl = $('#score');
+    var label = value.toLocaleString() + '!';
+    BBC.sfx.milestone && BBC.sfx.milestone(value / MILESTONE);
+    vibrate([30, 40, 30, 40, 70]);
+    var bb = boardEl.getBoundingClientRect();
+    if (reduceMotion) {
+      callout('praise milestone', label, 'Milestone', bb.left + bb.width / 2, bb.top + bb.height * 0.22, 1600);
+      return;
+    }
+    var sr = scoreEl.getBoundingClientRect();
+    var cx = sr.left + sr.width / 2, cy = sr.top + sr.height / 2;
+
+    scoreEl.classList.remove('milestone');
+    void scoreEl.offsetWidth; // restart the shimmer if two milestones come quickly
+    scoreEl.classList.add('milestone');
+    clearTimeout(scoreEl._msTimer);
+    scoreEl._msTimer = setTimeout(function () { scoreEl.classList.remove('milestone'); }, 1700);
+    try {
+      scoreEl.animate([
+        { transform: 'scale(1) rotate(0deg)' },
+        { transform: 'scale(1.55) rotate(-4deg)', offset: 0.22 },
+        { transform: 'scale(1.3) rotate(3deg)', offset: 0.45 },
+        { transform: 'scale(0.94) rotate(0deg)', offset: 0.75 },
+        { transform: 'scale(1) rotate(0deg)' }
+      ], { duration: 900, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    } catch (e) { /* older WebView */ }
+
+    // Two shockwave rings.
+    for (var k = 0; k < 2; k++) {
+      var ring = el('div', 'score-ring');
+      ring.style.left = cx + 'px';
+      ring.style.top = cy + 'px';
+      fxEl.appendChild(ring);
+      fade(ring, [
+        { transform: 'translate(-50%, -50%) scale(0.3)', opacity: 0.95 },
+        { transform: 'translate(-50%, -50%) scale(' + (3.2 + k * 1.4) + ')', opacity: 0 }
+      ], 700 + k * 200, k * 110, 'cubic-bezier(.1,.7,.3,1)');
+    }
+
+    // Sparks in all the block colours.
+    var n = 42;
+    for (var i = 0; i < n; i++) {
+      var s = el('div', 'spark');
+      var a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+      var dist = 110 + Math.random() * 150;
+      var size = 6 + Math.random() * 8;
+      s.style.width = s.style.height = size + 'px';
+      s.style.left = cx + 'px';
+      s.style.top = cy + 'px';
+      s.style.background = i % 3 === 0 ? 'var(--accent)' : 'var(--p' + (i % 8) + ')';
+      fxEl.appendChild(s);
+      var dx = Math.cos(a) * dist, dy = Math.sin(a) * dist * 0.8;
+      fade(s, [
+        { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(calc(-50% + ' + (dx * 0.8).toFixed(1) + 'px), calc(-50% + ' + (dy * 0.8).toFixed(1) + 'px)) scale(1) rotate(180deg)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(calc(-50% + ' + dx.toFixed(1) + 'px), calc(-50% + ' + (dy + 60).toFixed(1) + 'px)) scale(0.2) rotate(320deg)', opacity: 0 }
+      ], 800 + Math.random() * 400, Math.random() * 60, 'cubic-bezier(.15,.8,.3,1)');
+    }
+
+    // Quick golden screen flash.
+    var flash = el('div', 'milestone-flash');
+    fxEl.appendChild(flash);
+    fade(flash, [{ opacity: 0 }, { opacity: 0.55, offset: 0.15 }, { opacity: 0 }], 520);
+
+    // Big banner on the board.
+    callout('praise milestone', label, 'Milestone', bb.left + bb.width / 2, bb.top + bb.height * 0.22, 1600);
+    trimFx();
+  }
+
   /** Only write text that changed (writing the same text still costs a layout). */
   function setText(sel, text) {
     var e = $(sel);
     if (e.textContent !== text) e.textContent = text;
+  }
+
+  /** Long scores (100,000+) step the font down so they always fit. */
+  function writeScore(scoreEl, text) {
+    scoreEl.textContent = text;
+    var len = String(Math.min(text.length, 11));
+    if (scoreEl.dataset.len !== len) scoreEl.dataset.len = len;
   }
 
   function animateScore(target) {
@@ -334,7 +437,7 @@
     var from = shownScore;
     if (from === target || reduceMotion) {
       shownScore = target;
-      scoreEl.textContent = target.toLocaleString();
+      writeScore(scoreEl, target.toLocaleString());
       return;
     }
     var t0 = performance.now();
@@ -342,7 +445,7 @@
     (function step(now) {
       var k = Math.min(1, Math.max(0, (now - t0) / dur));
       shownScore = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
-      scoreEl.textContent = shownScore.toLocaleString();
+      writeScore(scoreEl, shownScore.toLocaleString());
       scoreAnim = k < 1 ? requestAnimationFrame(step) : null;
     })(t0);
   }
@@ -424,18 +527,28 @@
 
     // Where is this piece on screen right now? Either flying back to the tray
     // (catch it mid-air) or sitting in / arriving at its slot.
-    var ghost;
+    var ghost, homeX;
     var R = returnFor(slot);
     if (R && R.piece.uid === p.uid) {
       returns.splice(returns.indexOf(R), 1);
       ghost = R.ghost;
+      homeX = R.bx.x;
     } else {
       if (R) dropReturn(R);
       if (!slotEl.firstChild) return;
+      var pr = slotEl.firstChild.getBoundingClientRect();
+      homeX = pr.left + pr.width / 2;
       ghost = pieceEl(p, pitch, gap);
       ghost.classList.add('ghost');
       document.body.appendChild(ghost);
     }
+    // Block Blast-style pick-up: the piece rises straight up from its own slot
+    // (left piece on the left, right piece on the right), wherever in the
+    // slot you touched. From then on it moves with the finger. Only nudged in
+    // when the full-size piece would hang off the screen.
+    var vw0 = window.innerWidth, edge = 4;
+    if (w + 2 * edge <= vw0) homeX = Math.max(w / 2 + edge, Math.min(vw0 - w / 2 - edge, homeX));
+    else homeX = vw0 / 2;
 
     var tracker = new M.Tracker();
     tracker.reset(e.clientX, e.clientY, e.timeStamp || now);
@@ -449,6 +562,8 @@
       slot: slot, piece: p, ghost: ghost, id: e.pointerId, pitch: pitch,
       w: w, h: h, touch: touch,
       sx: e.clientX, sy: e.clientY,
+      // Touch: piece starts above its slot. Mouse: centred on the cursor.
+      ox: touch ? homeX - e.clientX : 0,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
       tracker: tracker, scale: scale, lift: lift,
       tilt: new M.Spring(0, still),
@@ -494,7 +609,7 @@
     var d = drag;
     // The finger's latest real position: no prediction, no smoothing.
     var fx = d.tracker.px, fy = d.tracker.py;
-    var x = d.sx + (fx - d.sx) * d.speed;
+    var x = d.sx + d.ox + (fx - d.sx) * d.speed;
     var y = d.sy + (fy - d.sy) * d.speed;
     var vw = window.innerWidth, vh = window.innerHeight;
     // Anchor = bottom-centre of the piece: above the finger on touch, centred on the mouse.

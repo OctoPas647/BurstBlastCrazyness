@@ -48,6 +48,13 @@
       var n = Math.min(lines + 1, 4);
       for (var i = 0; i < n; i++) tone(note(SCALE[base + i]), i * 0.06, 0.25, 'triangle', 0.16);
     },
+    /** Fanfare for every 10k: rising arpeggio plus a sparkle on top, a little higher each time. */
+    milestone: function (n) {
+      var up = Math.min((n - 1) % 5, 4);
+      [0, 4, 7, 12, 16].forEach(function (st, i) { tone(note(st + up), i * 0.07, 0.3, 'triangle', 0.17); });
+      [24, 28, 31].forEach(function (st, i) { tone(note(st + up), 0.38 + i * 0.05, 0.4, 'sine', 0.08); });
+      tone(note(up - 12), 0, 0.5, 'sine', 0.14);
+    },
     over: function () {
       [7, 4, 0, -5].forEach(function (s, i) { tone(note(s), i * 0.14, 0.3, 'sine', 0.15); });
     }

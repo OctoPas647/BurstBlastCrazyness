@@ -105,20 +105,47 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .score-wrap {
   flex: 1 1 0;
-  min-height: 90px;
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 #score {
-  font-size: clamp(64px, 19vw, 100px);
+  font-size: clamp(84px, 26vw, 140px);
   line-height: 1;
   font-weight: 900;
-  letter-spacing: -1px;
-  text-shadow: 0 4px 0 rgba(0,0,0,.25);
+  letter-spacing: -2px;
+  text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 26px rgba(255,255,255,.12);
   font-variant-numeric: tabular-nums;
+  will-change: transform;
 }
+#score[data-len="7"] { font-size: clamp(72px, 22vw, 122px); }
+#score[data-len="8"],
+#score[data-len="9"] { font-size: clamp(60px, 18vw, 104px); }
+#score[data-len="10"],
+#score[data-len="11"] { font-size: clamp(48px, 14.5vw, 84px); }
+/* Every 10k the score takes on a new colour and a stronger glow. */
+#score[data-tier="1"] { color: #fff3b8; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 22px rgba(255,216,77,.45); }
+#score[data-tier="2"] { color: #ffe066; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 26px rgba(255,190,40,.55); }
+#score[data-tier="3"] { color: #ffb347; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 30px rgba(255,140,40,.6); }
+#score[data-tier="4"] { color: #ff8fa3; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 32px rgba(255,84,112,.6); }
+#score[data-tier="5"] { color: #e3a6ff; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 34px rgba(192,108,255,.65); }
+#score[data-tier="6"] { color: #9fe8ff; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 36px rgba(46,197,255,.7); }
+#score[data-tier="7"],
+#score[data-tier="8"] { color: #b9ffd6; text-shadow: 0 5px 0 rgba(0,0,0,.28), 0 0 40px rgba(61,220,132,.75); }
+/* Milestone: golden shimmer sweeps across the digits. */
+#score.milestone {
+  background: linear-gradient(100deg, #fff 0%, #ffd84d 30%, #fff 45%, #ff9f43 60%, #ffd84d 80%, #fff 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 4px 0 rgba(0,0,0,.3)) drop-shadow(0 0 22px rgba(255,216,77,.9));
+  animation: score-shimmer 0.85s linear 2;
+}
+@keyframes score-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 .combo {
   height: 20px;
   line-height: 20px;
@@ -291,6 +318,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 18px var(--accent);
 }
 .banner .praise-main { font-size: 30px; letter-spacing: 1px; }
+.milestone .praise-main {
+  font-size: 58px;
+  color: #ffd84d;
+  text-shadow: 0 4px 0 rgba(0,0,0,.4), 0 0 24px rgba(255,216,77,.9), 0 0 48px rgba(255,159,67,.6);
+}
+.milestone .praise-combo { color: #fff; letter-spacing: 3px; text-transform: uppercase; font-size: 16px; }
+.score-ring {
+  position: fixed;
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  border: 5px solid var(--accent);
+  box-shadow: 0 0 22px var(--accent), inset 0 0 14px var(--accent);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.spark {
+  position: fixed;
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(255,255,255,.6);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.milestone-flash {
+  position: fixed; inset: 0;
+  background: radial-gradient(70% 45% at 50% 18%, rgba(255,216,77,.75), rgba(255,216,77,0) 70%);
+  pointer-events: none;
+  will-change: opacity;
+}
 .praise-combo {
   font-size: 22px;
   font-weight: 900;
@@ -654,8 +709,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* short screens */
 @media (max-height: 640px) {
-  .score-wrap { min-height: 64px; }
-  #score { font-size: 60px; }
+  .score-wrap { min-height: 76px; }
+  #score { font-size: 76px; }
 }
 
 /* Less motion for people who ask for it: things appear instead of flying. */
