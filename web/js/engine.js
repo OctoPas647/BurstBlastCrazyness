@@ -22,6 +22,7 @@
 
   var COLORS = 8;
   var COMBO_GRACE = 3;
+  var BOARD_CLEAR_BONUS = 5000; // clearing the entire board
 
   function Game(opts) {
     this.rows = opts.rows || 8;
@@ -195,6 +196,10 @@
     var placePts = BBC.mods.applyFilter('placementScore', placed.length, ctx);
     var clearPts = lineCount > 0 ? (this.combo + 1) * 10 * lineCount * Math.max(1, lineCount - 1) : 0;
     clearPts = BBC.mods.applyFilter('clearScore', clearPts, ctx);
+    // Clearing the whole board is a jackpot: a big flat bonus, plus the
+    // move's line points five times over.
+    var perfectPts = ctx.perfect ? BOARD_CLEAR_BONUS + clearPts * 4 : 0;
+    perfectPts = BBC.mods.applyFilter('boardClearScore', perfectPts, ctx);
 
     if (lineCount > 0) {
       this.combo++;
@@ -206,7 +211,7 @@
 
     cleared.forEach(function (x) { self.board[self.idx(x.r, x.c)] = null; });
 
-    var points = Math.round(placePts + clearPts);
+    var points = Math.round(placePts + clearPts + perfectPts);
     this.score += points;
     this.lines += lineCount;
 
@@ -219,6 +224,7 @@
       cleared: cleared,
       points: points,
       clearPoints: clearPts,
+      boardClearPoints: Math.round(perfectPts),
       combo: this.combo,
       perfect: ctx.perfect,
       newHand: false

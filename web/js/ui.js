@@ -899,7 +899,8 @@
         BBC.sfx.place();
       }
       floatPoints(res);
-      if (res.lines) praise(res);
+      if (res.perfect) boardClear(res);
+      else if (res.lines) praise(res);
     }
     renderHud();
 
@@ -1024,7 +1025,7 @@
 
   /** Keep the effects layer small no matter how fast lines are cleared. */
   function trimFx() {
-    var extra = fxEl.childElementCount - 260;
+    var extra = fxEl.childElementCount - 420;
     while (extra-- > 0 && fxEl.firstChild) fxEl.firstChild.remove();
   }
 
@@ -1044,17 +1045,129 @@
     fade(b, POP, 250, delay);
   }
 
-  /** Cleared blocks pop in a ripple that spreads out from the piece you placed. */
+  /*
+   * Block Blast-style line clear: the whole cleared line first takes the
+   * colour of the piece you just placed and lights up, then the blocks burst
+   * one after another in a ripple out from your piece, each throwing off a
+   * couple of shards in that colour.
+   */
+  var LINE_POP = [
+    { transform: 'scale(1)', opacity: 1, filter: 'brightness(1)' },
+    { transform: 'scale(1.12)', opacity: 1, filter: 'brightness(1.9)', offset: 0.3 },
+    { transform: 'scale(1.05)', opacity: 1, filter: 'brightness(1.5)', offset: 0.45 },
+    { transform: 'scale(0.15) rotate(25deg)', opacity: 0, filter: 'brightness(1)' }
+  ];
+
+  function lineCell(r, c, color, delay) {
+    var b = el('div', 'cell filled pop kind-' + 0);
+    b.style.setProperty('--c', 'var(--p' + color + ')');
+    b.style.width = b.style.height = geo.size + 'px';
+    b.style.left = geo.left + c * geo.pitch + 'px';
+    b.style.top = geo.top + r * geo.pitch + 'px';
+    fxEl.appendChild(b);
+    fade(b, LINE_POP, 330, delay, 'cubic-bezier(.3,.7,.4,1)');
+    // Shards.
+    var cx = geo.left + (c + 0.5) * geo.pitch, cy = geo.top + (r + 0.5) * geo.pitch;
+    for (var k = 0; k < 2; k++) {
+      var sh = el('div', 'shard');
+      var size = geo.size * (0.22 + Math.random() * 0.14);
+      sh.style.width = sh.style.height = size.toFixed(1) + 'px';
+      sh.style.left = cx + 'px';
+      sh.style.top = cy + 'px';
+      sh.style.background = 'var(--p' + color + ')';
+      fxEl.appendChild(sh);
+      var a = Math.random() * Math.PI * 2, dist = geo.pitch * (0.7 + Math.random() * 0.9);
+      var dx = Math.cos(a) * dist, dy = Math.sin(a) * dist;
+      fade(sh, [
+        { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 },
+        { transform: 'translate(calc(-50% + ' + dx.toFixed(1) + 'px), calc(-50% + ' + (dy + geo.pitch * 0.6).toFixed(1) + 'px)) scale(0.3) rotate(200deg)', opacity: 0 }
+      ], 420, delay + 110, 'cubic-bezier(.2,.7,.4,1)');
+    }
+  }
+
   function burst(res) {
     var cr = 0, cc = 0, i;
     for (i = 0; i < res.cells.length; i++) { cr += res.cells[i][0]; cc += res.cells[i][1]; }
     cr /= res.cells.length;
     cc /= res.cells.length;
+    var color = res.piece.color;
     for (i = 0; i < res.cleared.length; i++) {
       var x = res.cleared[i];
       var dist = Math.abs(x.r - cr) + Math.abs(x.c - cc);
-      popCell(x.r, x.c, x.cell, Math.min(90, dist * 9));
+      lineCell(x.r, x.c, color, Math.min(140, dist * 16));
     }
+    trimFx();
+  }
+
+  /*
+   * The whole board is empty: a rainbow wave sweeps diagonally across every
+   * cell, the board pulses, confetti rains over it and a huge "CLEAR!" banner
+   * with the bonus lands in the middle.
+   */
+  function boardClear(res) {
+    BBC.sfx.boardClear && BBC.sfx.boardClear();
+    vibrate([40, 50, 40, 50, 40, 50, 120]);
+    var bb = boardEl.getBoundingClientRect();
+    var bonus = res.boardClearPoints ? '+' + res.boardClearPoints.toLocaleString() + ' bonus' : '';
+    if (lastPraise && lastPraise.isConnected) lastPraise.remove();
+    if (reduceMotion) {
+      lastPraise = callout('praise board-clear', 'CLEAR!', bonus, bb.left + bb.width / 2, bb.top + bb.height * 0.45, 1800);
+      return;
+    }
+    var start = 260; // after the line bursts
+    var rows = game.rows, cols = game.cols, r, c;
+    for (r = 0; r < rows; r++) {
+      for (c = 0; c < cols; c++) {
+        var t = el('div', 'sweep-cell');
+        t.style.width = t.style.height = geo.size + 'px';
+        t.style.left = geo.left + c * geo.pitch + 'px';
+        t.style.top = geo.top + r * geo.pitch + 'px';
+        t.style.background = 'var(--p' + ((r + c) % 8) + ')';
+        fxEl.appendChild(t);
+        fade(t, [
+          { transform: 'scale(0.2)', opacity: 0 },
+          { transform: 'scale(1)', opacity: 0.95, offset: 0.35 },
+          { transform: 'scale(1)', opacity: 0.7, offset: 0.55 },
+          { transform: 'scale(0.4)', opacity: 0 }
+        ], 520, start + (r + c) * 32, 'cubic-bezier(.3,.7,.4,1)');
+      }
+    }
+    var sweepEnd = start + (rows + cols - 2) * 32;
+    try {
+      boardEl.animate([
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.045)', offset: 0.3 },
+        { transform: 'scale(0.985)', offset: 0.65 },
+        { transform: 'scale(1)' }
+      ], { duration: 520, delay: sweepEnd - 120, easing: 'ease-out' });
+    } catch (e) { /* older WebView */ }
+
+    // Confetti raining over the board.
+    for (var i = 0; i < 56; i++) {
+      var p = el('div', 'spark confetti');
+      var w = 6 + Math.random() * 6;
+      p.style.width = w + 'px';
+      p.style.height = (w * 1.7).toFixed(1) + 'px';
+      p.style.left = (bb.left + Math.random() * bb.width) + 'px';
+      p.style.top = (bb.top - 20) + 'px';
+      p.style.background = 'var(--p' + (i % 8) + ')';
+      fxEl.appendChild(p);
+      var fall = bb.height * (0.6 + Math.random() * 0.6), drift = (Math.random() - 0.5) * 120;
+      fade(p, [
+        { transform: 'translate(-50%, -50%) rotate(0deg)', opacity: 0 },
+        { transform: 'translate(-50%, -50%) rotate(40deg)', opacity: 1, offset: 0.1 },
+        { transform: 'translate(calc(-50% + ' + drift.toFixed(1) + 'px), calc(-50% + ' + fall.toFixed(1) + 'px)) rotate(' + (360 + Math.random() * 360).toFixed(0) + 'deg)', opacity: 0 }
+      ], 1300 + Math.random() * 600, start + Math.random() * 400, 'cubic-bezier(.25,.6,.5,1)');
+    }
+
+    // Flash and the banner.
+    var flash = el('div', 'milestone-flash board-flash');
+    fxEl.appendChild(flash);
+    fade(flash, [{ opacity: 0 }, { opacity: 0.6, offset: 0.2 }, { opacity: 0 }], 600, sweepEnd - 160);
+    setTimeout(function () {
+      if (lastPraise && lastPraise.isConnected) lastPraise.remove();
+      lastPraise = callout('praise board-clear', 'CLEAR!', bonus, bb.left + bb.width / 2, bb.top + bb.height * 0.45, 1900);
+    }, start);
     trimFx();
   }
 

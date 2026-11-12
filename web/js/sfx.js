@@ -55,6 +55,12 @@
       [24, 28, 31].forEach(function (st, i) { tone(note(st + up), 0.38 + i * 0.05, 0.4, 'sine', 0.08); });
       tone(note(up - 12), 0, 0.5, 'sine', 0.14);
     },
+    /** Whole board cleared: a big two-octave sweep and a bright chord. */
+    boardClear: function () {
+      [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24].forEach(function (st, i) { tone(note(st), i * 0.035, 0.22, 'triangle', 0.13); });
+      [12, 16, 19, 24].forEach(function (st) { tone(note(st), 0.42, 0.9, 'sine', 0.1); });
+      [0, 7].forEach(function (st) { tone(note(st - 12), 0.42, 0.9, 'triangle', 0.12); });
+    },
     over: function () {
       [7, 4, 0, -5].forEach(function (s, i) { tone(note(s), i * 0.14, 0.3, 'sine', 0.15); });
     }

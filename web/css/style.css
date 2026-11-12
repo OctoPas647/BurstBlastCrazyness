@@ -324,6 +324,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-shadow: 0 4px 0 rgba(0,0,0,.4), 0 0 24px rgba(255,216,77,.9), 0 0 48px rgba(255,159,67,.6);
 }
 .milestone .praise-combo { color: #fff; letter-spacing: 3px; text-transform: uppercase; font-size: 16px; }
+.board-clear .praise-main {
+  font-size: 76px;
+  letter-spacing: 2px;
+  color: #fff;
+  background: linear-gradient(90deg, var(--p0), var(--p2), var(--p3), var(--p4), var(--p6), var(--p7));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  filter: drop-shadow(0 5px 0 rgba(0,0,0,.4)) drop-shadow(0 0 20px rgba(255,255,255,.55));
+}
+.board-clear .praise-combo { font-size: 26px; color: #ffd84d; letter-spacing: 1px; }
+.sweep-cell {
+  position: fixed;
+  border-radius: 6px;
+  box-shadow: 0 0 14px rgba(255,255,255,.55);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.shard {
+  position: fixed;
+  border-radius: 3px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.confetti { border-radius: 2px; box-shadow: none; }
+.milestone-flash.board-flash { background: radial-gradient(60% 40% at 50% 50%, rgba(255,255,255,.7), rgba(255,255,255,0) 70%); }
 .score-ring {
   position: fixed;
   width: 90px; height: 90px;
