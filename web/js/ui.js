@@ -349,19 +349,19 @@
 
   /* ---------- drag & drop ---------- */
   /*
-   * Feel, in short:
-   *  - Touch-down answers at once: the piece leaves the tray on the same frame.
-   *  - It starts exactly where the tray piece is on screen and glides to its
-   *    place above your finger (no jump), then follows the finger 1:1.
-   *  - Aiming follows the finger from the first millisecond, even while the
-   *    picture is still catching up, so the fastest flick still lands.
-   *  - What the preview shows is where it lands. Always. A move can't be taken
-   *    back, so release never "guesses" a different cell from a flick.
-   *  - Letting go commits the move immediately; the piece's last few pixels are
-   *    a spring that starts at the finger's speed.
+   * Feel, in short (Block Blast-style, stiff):
+   *  - Touch-down answers at once: on the same frame the piece is full size
+   *    and sitting above your finger. No glide, no grow-in.
+   *  - While held it is welded to the finger: no look-ahead, no smoothing, no
+   *    lean, no springs, no rubber-banding. Swerve left/right/up/down and it
+   *    goes exactly where the finger goes (times the drag-speed setting),
+   *    reversing on the same frame you reverse.
+   *  - At the screen edges it stops dead (hard clamp) instead of stretching.
+   *  - What the preview shows is where it lands. Always.
+   *  - Letting go commits the move immediately; the piece snaps into its cells
+   *    without carrying any of the finger's speed.
    *  - A piece on its way back to the tray can be caught again mid-air.
    */
-  var LOOKAHEAD_MS = 16;   // draw the piece where the finger will be when the frame shows
   var drag = null;
   var flights = [];        // pieces flying into the board (move already made)
   var returns = [];        // pieces flying back to the tray
@@ -424,51 +424,36 @@
 
     // Where is this piece on screen right now? Either flying back to the tray
     // (catch it mid-air) or sitting in / arriving at its slot.
-    var ghost, bx, by, scale0, scaleV = 0, vx = 0, vy = 0;
+    var ghost;
     var R = returnFor(slot);
     if (R && R.piece.uid === p.uid) {
       returns.splice(returns.indexOf(R), 1);
       ghost = R.ghost;
-      bx = R.bx.x; by = R.by.x;
-      vx = R.bx.v; vy = R.by.v;
-      scale0 = R.scale.x; scaleV = R.scale.v;
     } else {
       if (R) dropReturn(R);
-      var tp = slotEl.firstChild;
-      if (!tp) return;
-      var rect = tp.getBoundingClientRect();
+      if (!slotEl.firstChild) return;
       ghost = pieceEl(p, pitch, gap);
       ghost.classList.add('ghost');
       document.body.appendChild(ghost);
-      scale0 = rect.width / w;
-      bx = rect.left + rect.width / 2;
-      by = rect.bottom;
     }
 
     var tracker = new M.Tracker();
     tracker.reset(e.clientX, e.clientY, e.timeStamp || now);
-    // The piece's bottom-centre is tied to the finger; "off" is what is left of
-    // the distance to its starting spot, and it springs to zero.
-    var ax = e.clientX, ay = touch ? e.clientY : e.clientY + h / 2;
-    var offX = new M.Spring(bx - ax, { duration: 0.08, bounce: 0 });
-    var offY = new M.Spring(by - ay, { duration: 0.08, bounce: 0 });
-    offX.v = vx; offY.v = vy;
-    offX.target = 0; offY.target = 0;
-    var scale = new M.Spring(scale0, { duration: 0.13, bounce: 0.05 });
-    scale.v = scaleV;
-    scale.target = 1;
+    // Stiff: everything starts at its final value. These springs are only kept
+    // so landing / going back can animate from where the piece is.
+    var still = { duration: 0.1, bounce: 0 };
+    var scale = new M.Spring(1, still);
+    var lift = new M.Spring(touch ? pitch * 1.4 : 0, still);
 
     drag = {
       slot: slot, piece: p, ghost: ghost, id: e.pointerId, pitch: pitch,
       w: w, h: h, touch: touch,
       sx: e.clientX, sy: e.clientY,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
-      tracker: tracker, offX: offX, offY: offY, scale: scale,
-      lift: new M.Spring(0, { duration: 0.11, bounce: 0 }),
-      tilt: new M.Spring(0, { duration: 0.35, bounce: 0.15 }),
-      bx: bx, by: by, target: null, shadow: null, glows: []
+      tracker: tracker, scale: scale, lift: lift,
+      tilt: new M.Spring(0, still),
+      bx: 0, by: 0, target: null, shadow: null, glows: []
     };
-    drag.lift.target = touch ? pitch * 1.4 : 0;
 
     try { document.body.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     slotEl.classList.add('lifted');
@@ -499,38 +484,28 @@
     else loopOn = false;
   }
 
-  /** Viewport clamp with iOS-style rubber-banding past the edges. */
-  function soften(v, min, max, dim) {
+  /** Hard edge: the piece stops dead at the limit, no stretch. */
+  function hardClamp(v, min, max) {
     if (max < min) max = min;
-    if (v < min) return min + M.rubberBand(v - min, dim);
-    if (v > max) return max + M.rubberBand(v - max, dim);
-    return v;
+    return v < min ? min : v > max ? max : v;
   }
 
   function dragFrame(dt, now) {
     var d = drag;
-    var f = d.tracker.predict(LOOKAHEAD_MS, d.pitch * 0.45, now);
-    var x = d.sx + (f.x - d.sx) * d.speed;
-    var y = d.sy + (f.y - d.sy) * d.speed;
-    d.scale.step(dt);
-    d.lift.step(dt);
-    d.offX.step(dt);
-    d.offY.step(dt);
+    // The finger's latest real position: no prediction, no smoothing.
+    var fx = d.tracker.px, fy = d.tracker.py;
+    var x = d.sx + (fx - d.sx) * d.speed;
+    var y = d.sy + (fy - d.sy) * d.speed;
     var vw = window.innerWidth, vh = window.innerHeight;
     // Anchor = bottom-centre of the piece: above the finger on touch, centred on the mouse.
-    var left = soften(x - d.w / 2, -d.w * 0.25, vw - d.w * 0.75, vw * 0.5);
+    var left = hardClamp(x - d.w / 2, -d.w * 0.25, vw - d.w * 0.75);
     var top = d.touch ? y - d.lift.x - d.h : y - d.h / 2;
-    top = soften(top, Math.min(0, geo.top - d.pitch), vh - d.h * 0.5, vh * 0.5);
-    // (ax, ay): where the finger says the piece is. The picture catches up
-    // with it within a few frames; aiming never waits for the picture.
+    top = hardClamp(top, Math.min(0, geo.top - d.pitch), vh - d.h * 0.5);
+    // The picture and the aim are the same point: the piece is welded to the finger.
     var ax = left + d.w / 2, ay = top + d.h;
-    d.bx = ax + d.offX.x;
-    d.by = ay + d.offY.x;
-    // A slight lean in the direction of travel.
-    var v = d.tracker.velocityAt(now);
-    d.tilt.target = Math.max(-4, Math.min(4, (v.x * d.speed) / 500));
-    d.tilt.step(dt);
-    paintGhost(d.ghost, d.bx, d.by, d.w, d.h, d.scale.x, d.tilt.x);
+    d.bx = ax;
+    d.by = ay;
+    paintGhost(d.ghost, d.bx, d.by, d.w, d.h, 1, 0);
 
     var target = snapTarget(d.piece, (ay - d.h - geo.top) / d.pitch, (ax - d.w / 2 - geo.left) / d.pitch, d.target);
     if (!sameTarget(target, d.target)) {
@@ -688,11 +663,10 @@
       return;
     }
     syncTray(false); // this slot empties; the others update their "fits" state
-    // Stiff and without bounce: the piece is driven straight into its cells.
-    // Only a little of the finger's speed is carried, so it can't swing past.
-    var opt = { duration: 0.11, bounce: 0 };
+    // Stiff and without bounce: the piece snaps straight into its cells.
+    // None of the finger's speed is carried, so it can't swing past.
+    var opt = { duration: 0.08, bounce: 0 };
     var bx = new M.Spring(d.bx, opt), by = new M.Spring(d.by, opt);
-    bx.v = clamp(vx, -900, 900); by.v = clamp(vy, -900, 900);
     bx.target = geo.left + target.c * d.pitch + d.w / 2;
     by.target = geo.top + target.r * d.pitch + d.h;
     flights.push({

@@ -2,7 +2,7 @@
 (function (BBC) {
   'use strict';
 
-  BBC.VERSION = '1.11.0';
+  BBC.VERSION = '1.12.0';
 
   var SAVE_KEY = 'bbc.save.v1';
   var BEST_KEY = 'bbc.best.v1';
