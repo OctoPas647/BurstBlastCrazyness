@@ -565,6 +565,9 @@
       // Touch: piece starts above its slot. Mouse: centred on the cursor.
       ox: touch ? homeX - e.clientX : 0,
       speed: touch ? +BBC.settings.dragSpeed || 1 : 1,
+      // Accelerated finger travel (see accelFeed).
+      accX: 0, accY: 0, lastX: e.clientX, lastY: e.clientY,
+      lastT: e.timeStamp || now, feltV: 0,
       tracker: tracker, scale: scale, lift: lift,
       tilt: new M.Spring(0, still),
       bx: 0, by: 0, target: null, shadow: null, glows: []
@@ -607,15 +610,18 @@
 
   function dragFrame(dt, now) {
     var d = drag;
-    // The finger's latest real position: no prediction, no smoothing.
-    var fx = d.tracker.px, fy = d.tracker.py;
-    var x = d.sx + d.ox + (fx - d.sx) * d.speed;
-    var y = d.sy + (fy - d.sy) * d.speed;
+    // Accelerated finger travel since touch-down: no prediction, no smoothing.
+    var x = d.sx + d.ox + d.accX;
+    var y = d.sy + d.accY;
     var vw = window.innerWidth, vh = window.innerHeight;
     // Anchor = bottom-centre of the piece: above the finger on touch, centred on the mouse.
     var left = hardClamp(x - d.w / 2, -d.w * 0.25, vw - d.w * 0.75);
     var top = d.touch ? y - d.lift.x - d.h : y - d.h / 2;
     top = hardClamp(top, Math.min(0, geo.top - d.pitch), vh - d.h * 0.5);
+    // Pressed against an edge: don't bank the extra travel, so the piece
+    // comes back the instant the finger turns around.
+    d.accX = left + d.w / 2 - d.sx - d.ox;
+    d.accY = (d.touch ? top + d.lift.x + d.h : top + d.h / 2) - d.sy;
     // The picture and the aim are the same point: the piece is welded to the finger.
     var ax = left + d.w / 2, ay = top + d.h;
     d.bx = ax;
@@ -660,10 +666,59 @@
     return (!a && !b) || (!!a && !!b && a.r === b.r && a.c === b.c);
   }
 
+  /*
+   * Finger acceleration, like Windows "Enhance pointer precision": each bit of
+   * finger movement is multiplied by a gain that depends on how fast the
+   * finger is going right now. Slow = less than 1:1 of the drag-speed
+   * setting, for careful aiming; fast = more, so a flick crosses the board
+   * without dragging your whole hand. The curve is smooth so there is no
+   * point where the piece suddenly jumps.
+   */
+  var ACCEL_SLOW_V = 150;    // px/s and below: precise
+  var ACCEL_FAST_V = 1300;   // px/s and above: full boost
+  var ACCEL_SLOW = 0.72;     // x drag-speed setting when slow
+  var ACCEL_FAST = 1.4;      // x drag-speed setting when fast
+  var ACCEL_SMOOTH_MS = 22;  // how quickly the felt speed follows the finger
+
+  function accelGain(v) {
+    var t = (v - ACCEL_SLOW_V) / (ACCEL_FAST_V - ACCEL_SLOW_V);
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    t = t * t * (3 - 2 * t); // smoothstep
+    return ACCEL_SLOW + (ACCEL_FAST - ACCEL_SLOW) * t;
+  }
+
+  /** Feed raw finger samples into the accelerated piece position. */
+  function accelFeed(d, e) {
+    var list = [];
+    try { if (e.getCoalescedEvents) list = e.getCoalescedEvents(); } catch (err) { list = []; }
+    if (!list || !list.length) list = [e];
+    for (var i = 0; i <= list.length; i++) {
+      // Last pass uses the event itself: it is the newest truth.
+      var ev = i < list.length ? list[i] : e;
+      var x = ev.clientX, y = ev.clientY;
+      var dx = x - d.lastX, dy = y - d.lastY;
+      if (!dx && !dy) continue;
+      var t = ev.timeStamp || performance.now();
+      var dt = Math.max(1, t - d.lastT);
+      if (dt > 100) d.feltV = 0; // finger rested: start again from slow
+      // After a rest, measure the first step over one frame, not the whole
+      // pause, so a flick from standstill gets its boost straight away.
+      dt = Math.min(dt, 34);
+      var v = Math.min(4000, Math.sqrt(dx * dx + dy * dy) / dt * 1000);
+      var a = 1 - Math.exp(-dt / ACCEL_SMOOTH_MS);
+      d.feltV += (v - d.feltV) * a;
+      var g = d.speed * (d.touch ? accelGain(d.feltV) : 1);
+      d.accX += dx * g;
+      d.accY += dy * g;
+      d.lastX = x; d.lastY = y; d.lastT = Math.max(d.lastT, t);
+    }
+  }
+
   function onMove(e) {
     if (!drag || e.pointerId !== drag.id) return;
     e.preventDefault();
     drag.tracker.add(e); // just record; the frame loop draws once per frame
+    accelFeed(drag, e);
   }
 
   function onUp(e) {
@@ -671,6 +726,7 @@
     var d = drag;
     var now = performance.now();
     d.tracker.add(e);
+    accelFeed(d, e);
     dragFrame(0, now); // settle the preview on the finger's final position
     drag = null;
     hidePreview(d);
